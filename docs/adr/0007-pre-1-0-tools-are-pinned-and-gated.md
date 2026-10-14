@@ -1,0 +1,7 @@
+# Pre-1.0 tools are allowed if pinned exactly and updated through CI
+
+The toolchain includes pre-1.0 tools on purpose: ty (in place of mypy) and oxfmt. Pre-1.0 tools can change behaviour in minor releases, so each one is pinned to an exact version. Renovate opens a PR for every update, and CI must pass before it merges, so breakage shows up as a failing PR and never on `main`. The same rule applies in sow and in every generated project. Alpha tools are still too early. Material for MkDocs stays in place of Zensical until Zensical reaches beta.
+
+In generated projects, the exact pin lives in the lockfile (`uv.lock`, `pnpm-lock.yaml`), not in the manifest. `pyproject.toml` and `package.json` use lower bounds with no upper bound (`>=`), and Renovate's uv and pnpm managers run with `rangeStrategy: in-range-only`. Every new version is inside a `>=` range, so Renovate still proposes every update, and it never edits the manifests. The template owns the manifests and raises a lower bound only when it needs a newer feature. If both the template and Renovate edited the same manifest lines, most `sow update` runs on an active project would conflict.
+
+Renovate's other managers (mise, Docker base images, GitHub Actions) still edit files the template also writes. Generated projects don't pin those by digest, so Renovate only opens PRs for new versions, which are rare. A conflict on one of those lines during `sow update` is expected and fixed by hand.
