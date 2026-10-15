@@ -22,7 +22,7 @@ A generated project comes with CI, pre-commit, Renovate, agent skills config and
 | Component | Stacks |
 |---|---|
 | `backend` | `python` (FastAPI), `ts` (Hono) |
-| `frontend` | `react` (Vite, TanStack Router and Query) |
+| `frontend` | `react` (Vite+, TanStack Router and Query) |
 | `database` | Postgres, with SQLAlchemy and Alembic or Prisma |
 | `observability` | OpenTelemetry, structured logs, SLOs and alert rules |
 | `deploy` | Helm, Argo CD and multi-arch images, deployed to a local `kind` cluster |
