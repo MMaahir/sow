@@ -6,6 +6,14 @@ Read `docs/roadmap.md` before planning or implementing anything: it holds the de
 
 ## Agent skills
 
+### Issue tracker
+
+Specs and tickets are GitHub issues on `MMaahir/sow`, managed with the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five default triage labels, each named after its role. See `docs/agents/triage-labels.md`.
+
 ### Domain docs
 
 Single-context: one `GLOSSARY.md` and `docs/adr/` at the repo root, created when the first term or decision is resolved. See `docs/agents/domain.md`.
