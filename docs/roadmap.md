@@ -28,7 +28,7 @@ Built with Typer. Personal defaults (`user_name`, `user_email`, `github_user`) c
 | `sow add <component> [<stack>]` | Updates the project to the CLI's version with the component turned on. `backend` and `frontend` need a stack, such as `sow add backend python`. Exits without changes if the component is already on |
 | `sow doctor` | Checks tool versions (including the global `vp` and `vp env doctor`), the skills marketplace install for Claude Code and Codex, and whether the project is behind the CLI's version |
 
-The project name must be lowercase letters, digits and hyphens, start with a letter, and be at most 53 characters. It becomes the Kubernetes namespace, the image names, the `<project>.localhost` URL and the Helm release name, and Helm limits release names to 53 characters. A Copier validator enforces this.
+The project name must be lowercase letters, digits and hyphens, start with a letter, end with a letter or digit, and be at most 53 characters. It becomes the Kubernetes namespace, the image names, the `<project>.localhost` URL and the Helm release name, and Helm limits release names to 53 characters. A Copier validator enforces this.
 
 `update` and `add` follow [ADR 0010](adr/0010-cli-rules-for-running-copier.md): they target the CLI's version, run the follow-up steps, fail if conflicts remain, and leave the changes uncommitted for review. No `remove` command is planned.
 
