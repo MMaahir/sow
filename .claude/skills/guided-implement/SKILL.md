@@ -1,6 +1,6 @@
 ---
 name: guided-implement
-description: Coach the user through implementing a ticket themselves. Use when the user asks for help working on a ticket.
+description: Coach the user through implementing a ticket themselves. Use when the user asks to go through, work through or pair on a ticket together ("let's go through this ticket together", "walk me through #12"), or asks for help working on a ticket.
 ---
 
 # Guided implement
@@ -29,7 +29,7 @@ Done when every link you give has been opened with WebFetch and says what you cl
 
 ## 3. Seams and slices
 
-Invoke the `tdd` skill and use it as the reference for steps 3 and 4. Propose the seams as `tdd` describes, and an ordered list of vertical slices, each a tracer bullet.
+Invoke the `mattpocock-skills:tdd` skill and use it as the reference for steps 3 and 4. Propose the seams as `tdd` describes, and an ordered list of vertical slices, each a tracer bullet.
 
 Done when the user confirms or edits the seams and slices.
 
@@ -49,7 +49,7 @@ Done when every slice is committed and the user's run of the full suite is green
 
 ## 5. Review in two passes
 
-1. Run the `code-review` skill against the fixed point from step 1. Keep its findings for item 3 below.
+1. Run the `mattpocock-skills:code-review` skill (not the built-in `code-review`) against the fixed point from step 1. Keep its findings for item 3 below.
 2. Delegate an independent review with `delegate_task`:
    - `target`: `{"providerInstanceId": "codex", "model": "gpt-6.1-sol", "options": {"reasoningEffort": "xhigh"}}`
    - `role`: `review`, `mode`: `async`, `clientRequestId`: `guided-review-<issue>-<round>`
@@ -67,10 +67,14 @@ Done when Must change is empty.
 
 ## 6. Close out
 
-1. Push the branch and open the PR with `gh pr create`. The title follows Conventional Commits, since it becomes the squash commit. Write the body with the `pr` skill and put `Closes #<issue>` in it.
+1. Push the branch and open the PR with `gh pr create`. The title follows Conventional Commits, since it becomes the squash commit. Write the body with the `mattpocock-skills:pr` skill and put `Closes #<issue>` in it.
 2. Watch the PR with `watch_pull_request`. When CI fails, coach the user through the fix the same way as step 4.
 3. Once `ci-ok` passes, hand back. The user does the squash merge, which closes the issue.
 
-Suggest `/retro` before the user clears the session.
-
 Done when `ci-ok` is green and the PR is waiting for the user's merge.
+
+## 7. Retro
+
+Ask the user to run `/mattpocock-skills:retro` on this session before clearing it. The skill blocks model invocation, so you can't start it yourself. When it runs, follow it as written.
+
+Done when the user has run the retro or declined it.
