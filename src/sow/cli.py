@@ -24,7 +24,7 @@ def new(name: str, no_input: Annotated[bool, typer.Option("--no-input")] = False
         vcs_ref=sow_ref,
     )
     subprocess.run(
-        ["git", "init"],
+        ["git", "init", "-b", "main"],
         check=True,
         cwd=name,
     )

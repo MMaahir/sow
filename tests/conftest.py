@@ -6,6 +6,9 @@ GIT_CONFIG_FOR_TESTS: str = """\
 [user]
     name = Test User
     email = test@example.com
+
+[init]
+    defaultBranch = master
 """
 
 REPO_ROOT = Path(__file__).resolve().parents[1]

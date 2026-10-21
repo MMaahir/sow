@@ -35,7 +35,8 @@ def test_new_records_the_answer_in_the_answers_file(tmp_path: pathlib.Path):
 
 def test_new_commits_the_project_as_the_first_commit(tmp_path: pathlib.Path):
     """Test that the created project is a git repository with exactly one commit, the commit
-    message and the clean tree."""
+    message and the clean tree.
+    """
     result = CliRunner().invoke(app, ["new", "demo", "--no-input"])
     assert result.exit_code == 0, result.output
     demo_path = tmp_path / "demo"
@@ -55,3 +56,20 @@ def test_new_commits_the_project_as_the_first_commit(tmp_path: pathlib.Path):
         cwd=demo_path,
     )
     assert status.stdout == "", status.stdout
+
+
+def test_new_puts_the_first_commit_on_main(tmp_path: pathlib.Path):
+    """Test that the first commit is on 'main', even when the user's git defaults to
+    'master'.
+    """
+    result = CliRunner().invoke(app, ["new", "demo", "--no-input"])
+    assert result.exit_code == 0, result.output
+    demo_path = tmp_path / "demo"
+    branch = subprocess.run(
+        ["git", "branch", "--show-current"],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=demo_path,
+    )
+    assert branch.stdout.strip() == "main"
