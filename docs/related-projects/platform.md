@@ -12,13 +12,15 @@ It's a separate project from sow. sow creates repos; `platform` runs infrastruct
 
 | Service | Job |
 |---|---|
-| `kind` cluster | The Kubernetes cluster, running locally on your Mac |
+| `k3d` cluster | The Kubernetes cluster: k3s running in Docker on your Mac |
 | Argo CD | Watches the app repos and deploys whatever changes in git (pull-based GitOps) |
 | Ingress controller | Routes `<project>.localhost` to the right app |
 | Grafana, Prometheus, Loki, Tempo | Store and display every app's metrics, logs and traces |
 | OpenTelemetry Collector | Receives telemetry from apps and forwards it to the storage services above |
 | CloudNativePG | Creates a Postgres database for each app that asks for one |
 | Sealed Secrets | Lets apps commit encrypted secrets to git. Only the cluster can decrypt them |
+
+k3s ships Traefik as its ingress controller. Either use it, or turn it off with `--k3s-arg "--disable=traefik@server:0"` when creating the cluster and install a different one.
 
 ## Why pull-based GitOps
 
