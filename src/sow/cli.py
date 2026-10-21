@@ -1,4 +1,5 @@
 import os
+import subprocess
 from importlib.metadata import version
 from typing import Annotated
 
@@ -21,6 +22,21 @@ def new(name: str, no_input: Annotated[bool, typer.Option("--no-input")] = False
         data={"project_name": name},
         defaults=no_input,
         vcs_ref=sow_ref,
+    )
+    subprocess.run(
+        ["git", "init"],
+        check=True,
+        cwd=name,
+    )
+    subprocess.run(
+        ["git", "add", "-A"],
+        check=True,
+        cwd=name,
+    )
+    subprocess.run(
+        ["git", "commit", "-m", "chore: initial commit from sow"],
+        check=True,
+        cwd=name,
     )
 
 
