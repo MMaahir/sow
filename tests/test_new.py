@@ -2,6 +2,7 @@ import os
 import pathlib
 import subprocess
 
+import pytest
 import yaml
 from typer.testing import CliRunner
 
@@ -73,3 +74,22 @@ def test_new_puts_the_first_commit_on_main(tmp_path: pathlib.Path):
         cwd=demo_path,
     )
     assert branch.stdout.strip() == "main"
+
+
+@pytest.mark.parametrize("name", [pytest.param("a" * 53, id="53-characters"), "a"])
+def test_new_accepts_a_valid_project_name(name: str, tmp_path: pathlib.Path):
+    """Test 'sow new <project-name>' accepts a valid project name."""
+    result = CliRunner().invoke(app, ["new", name, "--no-input"])
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / name).is_dir()
+
+
+@pytest.mark.parametrize(
+    "name", [pytest.param("a" * 54, id="54-characters"), "demo-", "1demo", "Demo"]
+)
+def test_new_rejects_an_invalid_project_name(name: str, tmp_path: pathlib.Path):
+    """Test 'sow new <project-name>' rejects an invalid project name."""
+    result = CliRunner().invoke(app, ["new", name, "--no-input"])
+    assert result.exit_code != 0, result.output
+    assert "lowercase letters, digits and hyphens" in result.output
+    assert not (tmp_path / name).exists()
