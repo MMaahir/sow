@@ -26,3 +26,7 @@ dev = [
     "ruff>=0.17.1",
     "ty>=0.0.89",
 ]
+
+[tool.pytest.ini_options]
+# DirtyLocalWarning fires whenever the template has uncommitted changes.
+filterwarnings = ["error", "ignore::copier.errors.DirtyLocalWarning"]
