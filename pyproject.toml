@@ -1,0 +1,32 @@
+[project]
+name = "sow"
+version = "0.0.0"
+description = "A CLI that generates and updates Python and TypeScript web projects from one Copier template."
+readme = "README.md"
+authors = [
+    { name = "Muhtadi Maahir", email = "muhtadimaahir@gmail.com" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "copier==9.19.1",
+    "typer>=0.27.3",
+]
+
+[project.scripts]
+sow = "sow.cli:app"
+
+[build-system]
+requires = ["uv_build>=0.11.6,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pyyaml>=6.0.3",
+    "ruff>=0.17.1",
+    "ty>=0.0.89",
+]
+
+[tool.pytest.ini_options]
+# DirtyLocalWarning fires whenever the template has uncommitted changes.
+filterwarnings = ["error", "ignore::copier.errors.DirtyLocalWarning"]

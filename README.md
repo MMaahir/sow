@@ -6,7 +6,7 @@ It's a personal tool with two jobs: making my own project start-ups fast and con
 
 ## Status
 
-Planning is done; no code exists yet. This repo holds the design: the roadmap, the glossary and the decision records. The next release is 0.1.
+Work on 0.1 has started. `sow new <name> --no-input` works as a walking skeleton: it renders a placeholder template and makes the first commit. This repo also holds the design: the roadmap, the glossary and the decision records.
 
 ## What it will do
 

@@ -4,6 +4,8 @@ A CLI that generates and updates Python and TypeScript web projects from one Cop
 
 Read `docs/roadmap.md` before planning or implementing anything: it holds the decided scope, stack and release plan. `docs/related-projects/` describes the agent skills and `platform` repos that sow depends on.
 
+Read `docs/agents/copier-gotchas.md` before writing `copier.yml`, template files or CLI tests: it lists Copier, Jinja and test-harness behaviour the docs don't state.
+
 ## Agent skills
 
 ### Issue tracker
