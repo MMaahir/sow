@@ -12,8 +12,8 @@ from sow.cli import app
 def test_new_renders_the_template_into_a_directory_named_after_the_project(
     tmp_path: pathlib.Path,
 ):
-    """Test that 'sow new <project-name>' generates a new project in a new directory named after
-    project, the directory should contain a README.md that starts with the line '# demo'.
+    """Test that 'sow new <project-name>' generates a new project in a directory named after
+    the project. The directory's README.md must start with the line '# demo'.
     """
     result = CliRunner().invoke(app, ["new", "demo", "--no-input"])
     readme = tmp_path / "demo" / "README.md"
@@ -85,7 +85,14 @@ def test_new_accepts_a_valid_project_name(name: str, tmp_path: pathlib.Path):
 
 
 @pytest.mark.parametrize(
-    "name", [pytest.param("a" * 54, id="54-characters"), "demo-", "1demo", "Demo"]
+    "name",
+    [
+        pytest.param("a" * 54, id="54-characters"),
+        "demo-",
+        "1demo",
+        "Demo",
+        pytest.param("demo\n", id="trailing-newline"),
+    ],
 )
 def test_new_rejects_an_invalid_project_name(name: str, tmp_path: pathlib.Path):
     """Test 'sow new <project-name>' rejects an invalid project name."""

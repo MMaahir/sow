@@ -12,17 +12,17 @@ app = typer.Typer()
 @app.command()
 def new(name: str, no_input: Annotated[bool, typer.Option("--no-input")] = False):
     """Generates a new project with a template."""
-    sow_template = os.environ.get(
+    template_src = os.environ.get(
         "SOW_TEMPLATE_SRC", "https://github.com/MMaahir/sow.git"
     )
-    sow_ref = os.environ.get("SOW_TEMPLATE_REF", f"v{version('sow')}")
+    template_ref = os.environ.get("SOW_TEMPLATE_REF", f"v{version('sow')}")
     try:
         copier.run_copy(
-            src_path=sow_template,
+            src_path=template_src,
             dst_path=name,
             data={"project_name": name},
             defaults=no_input,
-            vcs_ref=sow_ref,
+            vcs_ref=template_ref,
         )
     except ValueError as error:
         typer.echo(error, err=True)
