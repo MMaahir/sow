@@ -24,3 +24,17 @@ Behaviour of Copier 9.19.1, Jinja and the test harness that the docs don't state
 - Typer's `CliRunner` mixes stderr into `result.output`, so an error printed with `typer.echo(..., err=True)` shows up there.
 - `tests/conftest.py` writes the test gitconfig into `tmp_path`, so `tmp_path` is never empty. To check that nothing was created, assert `not (tmp_path / name).exists()`.
 - `git init -b main` overrides `init.defaultBranch`. The test gitconfig sets `defaultBranch = master` to prove it.
+
+## Answers and settings
+
+Confirmed while writing the tests for #13.
+
+- Copier picks a question's default in this order: `data`, the last answers (on update), `user_defaults`, then the settings file's `defaults`, then the question's own `default` (`copier/_user_data.py`, `Question.get_default`). A question answered through `data` is never prompted.
+- Copier reads the settings file from `COPIER_SETTINGS_PATH`, or `platformdirs.user_config_path("copier", appauthor=False) / "settings.yml"` when that's unset. If the env var names a missing file, Copier warns `MissingSettingsWarning`, which the suite turns into a failure. `tests/conftest.py` always writes the file.
+- A `data` answer that isn't one of a question's `choices` raises `ValueError("Invalid choice for '<name>': '<value>' is not in [...]")` before writing any file.
+- With `defaults=True`, a question with no default and no answer raises `ValueError('Question "<name>" is required')`.
+
+## Prompting under CliRunner
+
+- `CliRunner` has no terminal. Copier prints the first question it asks, using its `help` text, or its name when there's no help, and then raises `InteractiveSessionError`. That is not a `ValueError`. Tests can check which question was asked, but can't answer it.
+- prompt_toolkit keeps the first stdin it sees for the whole process, and `CliRunner` closes that stream after each call. A second test that prompts then fails with `I/O operation on closed file`. The `fresh_prompt_session` fixture gives each test its own session.
