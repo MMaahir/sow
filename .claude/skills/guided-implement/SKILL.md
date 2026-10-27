@@ -1,15 +1,15 @@
 ---
 name: guided-implement
-description: Coach the user through implementing a ticket themselves. Use when the user asks to go through, work through or pair on a ticket together ("let's go through this ticket together", "walk me through #12"), or asks for help working on a ticket.
+description: Coach the user through implementing a ticket: you write the tests, the user writes the code. Use when the user asks to go through, work through or pair on a ticket together ("let's go through this ticket together", "walk me through #12"), or asks for help working on a ticket.
 ---
 
 # Guided implement
 
-This is `/implement` with the roles swapped: the user is learning, so they write every test and every line of code, and you _coach_.
+This is `/implement` with the roles split: you write the tests, and the user, who is learning, writes every line of source and config to make them pass. You _coach_ the implementation.
 
 Rules for every step:
 
-- Leave source, test and config files to the user. Show patterns in chat; the user types them into the files.
+- Write and fix the test files yourself. Leave source, template and config files to the user. Show patterns in chat; the user types them into the files.
 - Give the reason with every suggestion: why this test, why this seam, why this change.
 - Take one step, or one beat inside a step, then end your turn and wait for the user.
 - Write every message for a learner: open with a line or two on where you are and what this step is for, then use short sentences with one idea each, define each new concept before you use it, and put what to do in a numbered list.
@@ -31,17 +31,27 @@ Invoke the `mattpocock-skills:tdd` skill and use it as the reference for steps 2
 
 Done when the grilling frontier is empty and the plan lists the confirmed seams, the slices and every settled decision.
 
+### Offline sessions
+
+If the user will be offline for the slices, you can't coach them live, so prepare everything before they disconnect:
+
+1. Write the tests for every slice up front, in slice order, and run them to confirm they fail for the right reason.
+2. Prove the tests can pass. Copy the repo to a temp dir, run `uv sync --offline` there so the editable install points at the copy, write a throwaway implementation, and run the suite, linter and type checker. Fix any test that can't go green, then delete the copy. Never put the implementation in the user's checkout.
+3. Write a notes file outside version control (`.notes/<issue>.md`, listed in `.git/info/exclude`). It holds the settled decisions, each slice's tests and the smallest change that makes them pass, the commands to run, and the facts the user would otherwise look up online: quote the docs or cite library source in `.venv` with `file:line`, since links won't open.
+4. Then do steps 4–6 once the user is back online.
+
 ## 3. Coach each slice, red then green
 
 For each slice, take these beats in order:
 
-1. **Behaviour.** Say in one sentence what the test proves, and suggest a test name. Name the independent source of the expected value: a literal, a worked example, or a line of the ticket.
-2. **Test shape.** Describe arrange, act and assert in prose. Name the pytest tools that fit (fixtures, `tmp_path`, `parametrize`, Typer's `CliRunner`) with a link to each. The user writes the test.
-3. **Red.** The user runs the single test file. Read the failure with them and confirm the missing behaviour causes it, rather than a typo or a broken fixture.
-4. **Test review.** Read the test file and check it against the `tdd` anti-patterns and its `mocking.md`. Explain each problem and why it makes the test weaker. The user fixes it.
-5. **Green.** Say where the code goes and what the smallest change is, and link the docs for any dependency, tool setup or library call it needs. When the user is stuck, give more help one rung at a time: the idea, then the doc section, then a short snippet in chat.
-6. **Checks.** The user runs the test file, the type checker and the linter. On a tool's first run, or a failure new to the user, link the docs section for it.
-7. **Commit.** Suggest a Conventional Commits message for the slice. The user commits.
+1. **Behaviour.** Say in one sentence what the test proves. Name the independent source of the expected value: a literal, a worked example, or a line of the ticket.
+2. **Test.** Write the test, checked against the `tdd` anti-patterns and its `mocking.md`. Walk the user through its arrange, act and assert, and name the pytest tools it uses (fixtures, `tmp_path`, `parametrize`, Typer's `CliRunner`) with a link to each.
+3. **Red.** Run the test and show the failure. Confirm the missing behaviour causes it, rather than a typo or a broken fixture, and explain what the failure tells the user to build.
+4. **Green.** Say where the code goes and what the smallest change is, and link the docs for any dependency, tool setup or library call it needs. When the user is stuck, give more help one rung at a time: the idea, then the doc section, then a short snippet in chat.
+5. **Checks.** The user runs the test file, the type checker and the linter. On a tool's first run, or a failure new to the user, link the docs section for it.
+6. **Commit.** Suggest a Conventional Commits message for the slice. The user commits the test and the code together.
+
+If the user's code passes but a test turns out to be wrong, fix the test yourself and say what was wrong with it.
 
 Done when every slice is committed and the user's run of the full suite is green.
 
