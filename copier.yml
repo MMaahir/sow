@@ -7,3 +7,15 @@ project_name:
         {% if not (project_name | regex_search('^[a-z]([a-z0-9-]{0,51}[a-z0-9])?\\Z')) %}
         Use lowercase letters, digits and hyphens. Start with a letter, end with a letter or digit, and use at most 53 characters.
         {% endif %}
+
+user_name:
+    type: str
+    help: Your name, used as the project's author.
+
+user_email:
+    type: str
+    help: Your email, used as the project's author email.
+
+github_user:
+    type: str
+    help: Your GitHub username.
