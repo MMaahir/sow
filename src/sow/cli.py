@@ -1,3 +1,4 @@
+import enum
 import os
 import subprocess
 from importlib.metadata import version
@@ -9,6 +10,15 @@ import typer
 app = typer.Typer()
 
 
+class Preset(enum.StrEnum):
+    """A name set of answers that 'sow new' fills in."""
+
+    MINIMAL = "minimal"
+
+
+PRESETS: dict[Preset, dict[str, str]] = {Preset.MINIMAL: {"backend": "none"}}
+
+
 @app.command()
 def new(
     name: str,
@@ -17,6 +27,7 @@ def new(
     user_email: Annotated[str | None, typer.Option()] = None,
     github_user: Annotated[str | None, typer.Option()] = None,
     backend: Annotated[str | None, typer.Option()] = None,
+    preset: Annotated[Preset | None, typer.Option()] = None,
 ):
     """Generates a new project with a template."""
     template_src = os.environ.get(
@@ -35,8 +46,9 @@ def new(
             src_path=template_src,
             dst_path=name,
             data={
-                "project_name": name,
+                **(PRESETS[preset] if preset else {}),
                 **given_flags,
+                "project_name": name,
             },
             defaults=no_input,
             vcs_ref=template_ref,
