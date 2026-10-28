@@ -19,3 +19,11 @@ user_email:
 github_user:
     type: str
     help: Your GitHub username.
+
+backend:
+    type: str
+    help: Backend stack.
+    choices:
+        - none
+        - python
+    default: none

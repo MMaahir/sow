@@ -16,6 +16,7 @@ def new(
     user_name: Annotated[str | None, typer.Option()] = None,
     user_email: Annotated[str | None, typer.Option()] = None,
     github_user: Annotated[str | None, typer.Option()] = None,
+    backend: Annotated[str | None, typer.Option()] = None,
 ):
     """Generates a new project with a template."""
     template_src = os.environ.get(
@@ -26,6 +27,7 @@ def new(
         "user_name": user_name,
         "user_email": user_email,
         "github_user": github_user,
+        "backend": backend,
     }
     given_flags = {k: v for k, v in flags.items() if v is not None}
     try:
