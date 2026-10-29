@@ -11,12 +11,18 @@ from sow.cli import app
 USER_NAME_HELP = "Your name"
 BACKEND_HELP = "Backend stack"
 
+PERSONAL_FLAGS = {
+    "user_name": ["--user-name", "Ada Lovelace"],
+    "user_email": ["--user-email", "ada@example.com"],
+    "github_user": ["--github-user", "ada"],
+}
+
 
 def read_answers(project: pathlib.Path) -> dict[str, Any]:
     return yaml.safe_load((project / ".copier-answers.yml").read_text(encoding="utf-8"))
 
 
-# Slice 1: personal defaults from the Copier settings file
+# Personal defaults from the Copier settings file
 
 
 def test_new_records_personal_defaults_from_the_copier_settings_file(
@@ -38,20 +44,27 @@ def test_new_records_personal_defaults_from_the_copier_settings_file(
     assert answers["github_user"] == "ada"
 
 
-def test_new_requires_personal_answers_with_no_input(
-    tmp_path: pathlib.Path, copier_settings: pathlib.Path
+@pytest.mark.parametrize("missing", PERSONAL_FLAGS)
+def test_new_requires_each_personal_answer_with_no_input(
+    missing: str, tmp_path: pathlib.Path, copier_settings: pathlib.Path
 ):
-    """Test that with no settings file defaults and no flag, --no-input names the missing
-    question and creates nothing.
+    """Test that with no settings file default and no flag for one personal question,
+    --no-input names that question and creates nothing.
     """
     copier_settings.write_text("defaults: {}\n", encoding="utf-8")
-    result = CliRunner().invoke(app, ["new", "demo", "--no-input"])
+    given = [
+        arg
+        for question, args in PERSONAL_FLAGS.items()
+        if question != missing
+        for arg in args
+    ]
+    result = CliRunner().invoke(app, ["new", "demo", "--no-input", *given])
     assert result.exit_code != 0, result.output
-    assert "user_name" in result.output
+    assert missing in result.output
     assert not (tmp_path / "demo").exists()
 
 
-# Slice 2: flags override the personal defaults
+# Flags override the personal defaults
 
 
 @pytest.mark.parametrize(
@@ -71,7 +84,7 @@ def test_new_personal_flag_overrides_the_copier_settings_file(
     assert read_answers(tmp_path / "demo")[question] == value
 
 
-# Slice 3: the backend question and its flag
+# The backend question and its flag
 
 
 def test_new_records_no_backend_by_default(tmp_path: pathlib.Path):
@@ -99,7 +112,7 @@ def test_new_rejects_an_unknown_backend(tmp_path: pathlib.Path):
     assert not (tmp_path / "demo").exists()
 
 
-# Slice 4: the minimal preset
+# The minimal preset
 
 
 def test_new_minimal_preset_renders_no_components(
@@ -117,6 +130,7 @@ def test_new_minimal_preset_renders_no_components(
     )
     assert result.exit_code == 0, result.output
     assert read_answers(tmp_path / "demo")["backend"] == "none"
+    assert not (tmp_path / "demo" / "backend").exists()
 
 
 def test_new_flag_overrides_the_preset(tmp_path: pathlib.Path):
@@ -128,7 +142,7 @@ def test_new_flag_overrides_the_preset(tmp_path: pathlib.Path):
     assert read_answers(tmp_path / "demo")["backend"] == "python"
 
 
-# Slice 5: an unknown preset
+# An unknown preset
 
 
 def test_new_rejects_an_unknown_preset_and_lists_the_presets(tmp_path: pathlib.Path):
@@ -139,7 +153,7 @@ def test_new_rejects_an_unknown_preset_and_lists_the_presets(tmp_path: pathlib.P
     assert not (tmp_path / "demo").exists()
 
 
-# Slice 6: prompting without --no-input
+# Prompting without --no-input
 #
 # CliRunner has no terminal, so Copier prints the first question it asks and then fails with
 # InteractiveSessionError. That's enough to see which question it asked.
@@ -153,18 +167,7 @@ def test_new_prompts_for_unanswered_questions_without_no_input():
 
 def test_new_does_not_prompt_for_answers_given_as_flags():
     """Test that questions answered by flags are skipped and the next unanswered one is asked."""
-    result = CliRunner().invoke(
-        app,
-        [
-            "new",
-            "demo",
-            "--user-name",
-            "Ada Lovelace",
-            "--user-email",
-            "ada@example.com",
-            "--github-user",
-            "ada",
-        ],
-    )
+    given = [arg for args in PERSONAL_FLAGS.values() for arg in args]
+    result = CliRunner().invoke(app, ["new", "demo", *given])
     assert USER_NAME_HELP not in result.output
     assert BACKEND_HELP in result.output
