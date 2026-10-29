@@ -6,6 +6,7 @@ from typing import Annotated
 
 import copier
 import typer
+from copier.errors import InteractiveSessionError
 
 app = typer.Typer()
 
@@ -53,6 +54,13 @@ def new(
             defaults=no_input,
             vcs_ref=template_ref,
         )
+    except InteractiveSessionError:
+        typer.echo(
+            "sow new needs a terminal to ask its questions. Pass --no-input and give "
+            "the answers as flags or a preset.",
+            err=True,
+        )
+        raise typer.Exit(code=1)
     except ValueError as error:
         typer.echo(error, err=True)
         raise typer.Exit(code=1)

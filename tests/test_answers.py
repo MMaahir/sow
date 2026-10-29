@@ -171,3 +171,13 @@ def test_new_does_not_prompt_for_answers_given_as_flags():
     result = CliRunner().invoke(app, ["new", "demo", *given])
     assert USER_NAME_HELP not in result.output
     assert BACKEND_HELP in result.output
+
+
+def test_new_without_a_terminal_exits_with_a_message(tmp_path: pathlib.Path):
+    """Test that when sow new can't prompt, it exits with a message pointing at --no-input
+    instead of a traceback, and creates nothing.
+    """
+    result = CliRunner().invoke(app, ["new", "demo"])
+    assert result.exit_code == 1, result.output
+    assert "--no-input" in result.output
+    assert not (tmp_path / "demo").exists()
