@@ -11,7 +11,7 @@ app = typer.Typer()
 
 
 class Preset(enum.StrEnum):
-    """A name set of answers that 'sow new' fills in."""
+    """A named set of answers that 'sow new' fills in."""
 
     MINIMAL = "minimal"
 
