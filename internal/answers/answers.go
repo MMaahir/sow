@@ -129,11 +129,16 @@ func Resolve(sources ...Answers) (Answers, error) {
 // Dirs returns the template directories these answers select: "base", then one
 // directory per component that is on, named "<component>-<stack>". ADR 0012
 // fixes this naming rule.
+//
+// A component with no answer is off. An answers file written by an older
+// release has no entry for a component added since, and the old render must
+// not pick that component up.
 func (a Answers) Dirs() []string {
 	dirs := []string{"base"}
 	for _, q := range Questions() {
-		if q.Component && a[q.Key] != None {
-			dirs = append(dirs, q.Key+"-"+a[q.Key])
+		stack := a[q.Key]
+		if q.Component && stack != "" && stack != None {
+			dirs = append(dirs, q.Key+"-"+stack)
 		}
 	}
 	return dirs

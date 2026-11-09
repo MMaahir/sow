@@ -29,7 +29,7 @@ Copy the existing code for each of these. Don't invent a second way.
 3. Add tests in `internal/cli/new_test.go`: the default is recorded, the flag is recorded, a bad value is rejected and the error lists the choices.
 4. Update the expected file in `TestNewWritesTheAnswersFile`.
 
-Every answer is a string. A component answer has `Component: true`, and its value is a stack name or `none`.
+Every answer is a string. A component answer has `Component: true`, and its value is a stack name or `none`. That holds for every component, including one with a single stack: `database` is `none` or `postgres`, never `true` or `false`.
 
 ### Add a stack to a component
 
@@ -56,7 +56,9 @@ Add one entry to `presets` in `internal/answers/presets.go`, and tests like `Tes
 
 ### Start an external command
 
-Use `run` in `internal/project/new.go`. It sets the directory and environment and returns an error that names the command, the directory and the output. Never call `exec.Command` anywhere else in non-test code. Pass `opts.Environ` through, and never use `os.Environ()`.
+Use `run` in `internal/project/new.go`. It finds the executable on the `PATH` of the environment it was given, sets the directory and environment, and returns an error that names the command, the directory and the output. Never call `exec.Command` or `exec.LookPath` anywhere else in non-test code, because they read the real process's `PATH`. Pass `opts.Environ` through, and never use `os.Environ()`.
+
+To test a command sow starts, put a fake executable in a sandbox directory and put that directory first in the sandbox's `PATH`.
 
 ## 3. Go rules
 
@@ -68,7 +70,7 @@ Each rule has a reason. The rule still applies when the reason seems not to.
 4. **Wrap errors with context using `%w`.** `fmt.Errorf("read the personal defaults file %s: %w", path, err)`. The message starts lowercase, has no trailing full stop, and says what sow was doing. Don't add context the inner error already has. `os` errors already contain the path.
 5. **An error the author will see tells them what to do next.** `user_name is missing: pass --user-name or set user_name in the personal defaults file`. Name the flag, the file or the command.
 6. **Report every problem at once when validating.** Collect errors and return `errors.Join(problems...)`, as `answers.Resolve` does. The author shouldn't fix one answer only to hit the next.
-7. **Check before you write.** Validate and render everything in memory first, then write files, then start commands. `project.New` does this. A failure in validation must leave nothing on disk.
+7. **Check before you write.** Validate and render everything in memory first, then write files, then start commands. `project.New` does this. A failure in validation or rendering must leave nothing on disk. A failure after writing has started, such as a follow-up step that fails, leaves the files in place so the author can fix the cause and run the command again.
 8. **No new dependencies.** The module uses cobra and a YAML library. `huh` joins when the prompt ticket adds it. Anything else needs a ticket that names it. The standard library covers the rest: `slices`, `maps`, `strings`, `errors`, `os`, `io/fs`, `path/filepath`, `text/template`.
 9. **No package-level variables that change.** Package-level `var` is allowed only for values set once and never reassigned, such as a compiled `regexp` or the `presets` map. No `init()` functions.
 10. **No interface until two real implementations exist.** Don't add one for testing. Tests use the real file system in a temporary directory and real `git`.
@@ -116,7 +118,7 @@ func TestNewRefusesAnExistingDirectory(t *testing.T) {
 1. **The name is a sentence about behaviour**: `Test<Command><What it does>`. Not `TestResolve`, not `TestNew2`.
 2. **Three blocks separated by blank lines**: set up, one action, checks.
 3. **Write the expected value as a literal.** Never compute it with the code under test or copy its logic. `want := "# demo\n"`, not `want := "# " + name + "\n"`.
-4. **A failure test checks three things**: the exit code is 1, the message names the problem and the fix, and nothing was written.
+4. **A failure test checks three things**: the exit code is 1, the message names the problem and the fix, and the state of the disk. For a failure before writing starts (bad answers, a template error), nothing was written. For a failed follow-up step, the files are still there.
 5. **Use `s.mustRun` when the command should succeed** and `s.run` when you want to inspect a failure.
 6. **Use the standard library only.** No assertion packages. Use `t.Errorf` for a failed check so the other checks still run, and `t.Fatal` only when the rest of the test can't continue.
 7. **Several cases of one behaviour go in a map and `t.Run`**, as in `TestNewRejectsAnInvalidProjectName`. Each case gets a new sandbox.
@@ -142,7 +144,7 @@ Work one behaviour at a time.
 3. Run `mise run check`.
 4. Repeat for the next behaviour.
 
-Never change a test to make it pass unless the test itself was wrong, and say so in the PR. Never delete or skip a failing test.
+Never change a test to make it pass unless the test itself was wrong, and say so in the PR. Never delete a failing test, and never add `t.Skip` to one. The only skips allowed are the two in test rules 10 and 11.
 
 ## 5. Template rules
 
@@ -151,7 +153,17 @@ ADR 0012 defines the template format. It's a compatibility contract, because `so
 1. **Add `.tmpl` only when the file needs an answer.** Plain files are safer and other tools can parse them. Keep `package.json`, `pnpm-workspace.yaml` and lockfiles plain, so Renovate can read them.
 2. **Delimiters are `[[` and `]]`.** `{{ }}` passes through untouched.
 3. **Templates only substitute answers and branch on them**: `[[ .project_name ]]` and `[[ if eq .backend "ts" ]]...[[ end ]]`. No loops, no variables, no nested templates, no custom functions. If you need more, the file is doing too much. Stop and comment on the ticket.
-4. **Use `[[-` and `-]]` to trim the newline** around an `if`, so the rendered file has no blank lines where a branch was skipped. Check the rendered output in a test.
+4. **Put `[[ if ... -]]` and `[[ end -]]` on their own lines, with the dash on the right only.** `-]]` removes the whitespace after the action, which is that line's newline, so a skipped branch leaves no blank line. Never write `[[-`, because it also removes the newline before the action and joins two lines together. Check the rendered output in a test, as `TestRenderABranchOnItsOwnLinesLeavesNoBlankLines` does.
+
+   ```
+   before
+   [[ if eq .backend "ts" -]]
+   middle
+   [[ end -]]
+   after
+   ```
+
+   This renders `before`, `middle`, `after` on three lines when the backend is `ts`, and `before`, `after` on two lines otherwise.
 5. **A path belongs to one directory.** If two directories that can be selected together contain the same path, rendering fails. A file that depends on several answers lives in `template/base/` as a `.tmpl`.
 6. **Never add a file named `go.mod` under `template/`.** Go's embed skips any directory that contains one. Name it `go.mod.tmpl`.
 7. **Files aren't executable.** The embedded file system drops the executable bit. Call scripts through their interpreter, such as `sh scripts/foo.sh`.

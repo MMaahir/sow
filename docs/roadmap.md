@@ -38,7 +38,7 @@ Written in Go with cobra. Personal defaults (`user_name`, `user_email`, `github_
 |---|---|
 | `sow new <name>` | Applies a preset, or answers given as flags. Interactive, or `--no-input`. Runs the follow-up steps and makes the first commit. With `--github`, it also creates the repo, sets branch protection (requiring `ci-ok`), turns on secret scanning push protection and pushes |
 | `sow update` | Updates the project to the CLI's version |
-| `sow add <component> [<stack>]` | Updates the project to the CLI's version with the component turned on. `backend` and `frontend` need a stack, such as `sow add backend ts`. Exits without changes if the component is already on |
+| `sow add <component> [<stack>]` | Updates the project to the CLI's version with the component turned on. A component with more than one stack needs the stack, such as `sow add backend ts`. Exits without changes if the component is already on |
 | `sow doctor` | Checks tool versions (including the global `vp` and `vp env doctor`), the skills marketplace install for Claude Code and Codex, and whether the project is behind the CLI's version |
 
 The project name must be lowercase letters, digits and hyphens, start with a letter, end with a letter or digit, and be at most 53 characters. It becomes the Kubernetes namespace, the image names, the `<project>.localhost` URL and the Helm release name, and Helm limits release names to 53 characters.
@@ -49,7 +49,7 @@ When a TypeScript component is on, `new`, `update` and `add` check that the glob
 
 ## Components and presets
 
-Every generated project gets the always-on files and CI. Everything else is a component, turned on by an answer. The CLI validates prerequisites: `frontend`, `database`, `observability` and `deploy` each need a `backend`.
+Every generated project gets the always-on files and CI. Everything else is a component, turned on by an answer. Each component answer is `none` or a stack, so `database` is `none` or `postgres` ([ADR 0012](adr/0012-go-cli-with-its-own-template-renderer.md)). The CLI validates prerequisites: `frontend`, `database`, `observability` and `deploy` each need a `backend`.
 
 | Preset | Answers |
 |---|---|

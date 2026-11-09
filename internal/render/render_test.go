@@ -87,6 +87,14 @@ func TestRenderFailures(t *testing.T) {
 			dirs: []string{"base", "backend-ts"},
 			want: "mise.toml is in both base and backend-ts",
 		},
+		"a path is a file in one directory and a directory in another": {
+			tmpl: fstest.MapFS{
+				"base/backend":                    {Data: []byte("a")},
+				"backend-ts/backend/package.json": {Data: []byte("b")},
+			},
+			dirs: []string{"base", "backend-ts"},
+			want: "backend is a file in base and a directory in backend-ts",
+		},
 		"a template uses an answer that doesn't exist": {
 			tmpl: fstest.MapFS{"base/README.md.tmpl": {Data: []byte("[[ .project_title ]]")}},
 			dirs: []string{"base"},
@@ -108,5 +116,23 @@ func TestRenderFailures(t *testing.T) {
 				t.Errorf("error = %q, want it to contain %q", err, test.want)
 			}
 		})
+	}
+}
+
+func TestRenderABranchOnItsOwnLinesLeavesNoBlankLines(t *testing.T) {
+	tmpl := fstest.MapFS{"base/tools.txt.tmpl": {Data: []byte(
+		"before\n[[ if eq .backend \"ts\" -]]\nmiddle\n[[ end -]]\nafter\n")}}
+
+	for backend, want := range map[string]string{
+		"ts":   "before\nmiddle\nafter\n",
+		"none": "before\nafter\n",
+	} {
+		files, err := render.Render(tmpl, []string{"base"}, map[string]string{"backend": backend})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := string(files[0].Content); got != want {
+			t.Errorf("backend %s: tools.txt = %q, want %q", backend, got, want)
+		}
 	}
 }

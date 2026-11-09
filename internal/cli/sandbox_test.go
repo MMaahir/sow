@@ -85,6 +85,14 @@ func (s *sandbox) writePersonalDefaults(content string) {
 	s.write(s.home, ".config/sow/config.yml", content)
 }
 
+// removePersonalDefaults deletes the personal defaults file.
+func (s *sandbox) removePersonalDefaults() {
+	s.t.Helper()
+	if err := os.Remove(filepath.Join(s.home, ".config", "sow", "config.yml")); err != nil {
+		s.t.Fatal(err)
+	}
+}
+
 // write creates the file at root/name, and its directories, with content.
 func (s *sandbox) write(root, name, content string) {
 	s.t.Helper()

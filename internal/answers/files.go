@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"slices"
 	"strings"
@@ -44,7 +45,7 @@ func Marshal(version string, a Answers) ([]byte, error) {
 
 // ReadPersonalDefaults reads the personal defaults file at path. A missing
 // file gives no answers and no error. A key that isn't a personal default is
-// an error, so a typo doesn't go unnoticed.
+// an error, so a typo doesn't go unnoticed. The error lists every such key.
 func ReadPersonalDefaults(path string) (Answers, error) {
 	content, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -64,11 +65,16 @@ func ReadPersonalDefaults(path string) (Answers, error) {
 			personal = append(personal, q.Key)
 		}
 	}
-	for key := range defaults {
+	var problems []error
+	for _, key := range slices.Sorted(maps.Keys(defaults)) {
 		if !slices.Contains(personal, key) {
-			return nil, fmt.Errorf("the personal defaults file %s sets %s, but it can only set %s",
-				path, key, strings.Join(personal, ", "))
+			problems = append(problems, fmt.Errorf(
+				"the personal defaults file %s sets %s, but it can only set %s",
+				path, key, strings.Join(personal, ", ")))
 		}
+	}
+	if len(problems) > 0 {
+		return nil, errors.Join(problems...)
 	}
 	return defaults, nil
 }

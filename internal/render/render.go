@@ -31,7 +31,8 @@ type File struct {
 // over the same project root. A template reads an answer as [[ .key ]].
 //
 // Render fails if a directory is missing, if two directories contain the same
-// path, or if a template uses an answer that data doesn't have.
+// path, if one path is both a file and a directory, or if a template uses an
+// answer that data doesn't have.
 func Render(tmpl fs.FS, dirs []string, data map[string]string) ([]File, error) {
 	owner := map[string]string{}
 	var files []File
@@ -64,6 +65,15 @@ func Render(tmpl fs.FS, dirs []string, data map[string]string) ([]File, error) {
 		})
 		if err != nil {
 			return nil, fmt.Errorf("render the template: %w", err)
+		}
+	}
+
+	for target, dir := range owner {
+		for parent := path.Dir(target); parent != "."; parent = path.Dir(parent) {
+			if other, taken := owner[parent]; taken {
+				return nil, fmt.Errorf("render the template: %s is a file in %s and a directory in %s",
+					parent, other, dir)
+			}
 		}
 	}
 

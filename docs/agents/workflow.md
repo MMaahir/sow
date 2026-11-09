@@ -30,9 +30,11 @@ gh issue list --state open --label ready-for-agent \
 1. Skip issues titled `Spec ...`. They're parents, not work.
 2. Take the lowest release first, then the lowest issue number.
 3. Read the ticket: `gh issue view <n> --json number,title,body,labels,comments`. Read the comments too. A paused ticket has a handoff comment (section 7).
-4. Check each issue under "Blocked by" with `gh issue view <blocker> --json state`. If any is open, the ticket isn't ready. Pick another.
-5. A blocker labelled `ready-for-human` only blocks the part of the ticket that needs the author's file. If the ticket says so, build the rest and skip the dependent checks (coding guide, test rule 11).
-6. Claim it: `gh issue edit <n> --add-assignee @me`.
+4. Check each issue under "Blocked by" with `gh issue view <blocker> --json state,labels`.
+   - Every blocker is closed: the ticket is ready.
+   - An open blocker is labelled `ready-for-agent`: the ticket isn't ready. Pick another.
+   - An open blocker is labelled `ready-for-human`: the ticket is ready only if its body says which checks skip until the author's file exists. Build the rest and make those checks skip (coding guide, test rule 11). If the body doesn't say so, the ticket isn't ready.
+5. Claim it: `gh issue edit <n> --add-assignee @me`.
 
 ## 3. Prepare
 
@@ -93,7 +95,7 @@ Several tickets built in one session can share one integration branch and one PR
 
 You may run out of budget or hit something you can't solve. Leave the work so the next agent loses nothing.
 
-1. Commit what passes. Never commit a failing test without `t.Skip` and a message that says why, and say so in the handoff.
+1. Commit only what passes `mise run check`. Don't commit a failing test and don't add `t.Skip` to one. Discard it, and describe it under "Next step" so the next agent writes it again.
 2. Push the branch.
 3. Comment on the ticket:
 

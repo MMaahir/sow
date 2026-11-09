@@ -67,7 +67,11 @@ func New(ctx context.Context, opts Options) error {
 // the command and its directory and carries the command's output, so the
 // author can run it again by hand.
 func run(ctx context.Context, environ []string, dir, name string, args ...string) error {
-	cmd := exec.CommandContext(ctx, name, args...)
+	executable, err := lookPath(environ, name)
+	if err != nil {
+		return err
+	}
+	cmd := exec.CommandContext(ctx, executable, args...)
 	cmd.Dir = dir
 	cmd.Env = environ
 	output, err := cmd.CombinedOutput()
@@ -76,4 +80,24 @@ func run(ctx context.Context, environ []string, dir, name string, args ...string
 			name, strings.Join(args, " "), dir, err, strings.TrimSpace(string(output)))
 	}
 	return nil
+}
+
+// lookPath finds the executable called name in the PATH of environ. The
+// standard exec.LookPath reads the real process's PATH, which would ignore the
+// environment sow was given.
+func lookPath(environ []string, name string) (string, error) {
+	var pathList string
+	for _, entry := range environ {
+		if value, ok := strings.CutPrefix(entry, "PATH="); ok {
+			pathList = value
+		}
+	}
+	for _, dir := range filepath.SplitList(pathList) {
+		candidate := filepath.Join(dir, name)
+		info, err := os.Stat(candidate)
+		if err == nil && info.Mode().IsRegular() && info.Mode().Perm()&0o111 != 0 {
+			return candidate, nil
+		}
+	}
+	return "", fmt.Errorf("%s isn't installed, or isn't on PATH", name)
 }

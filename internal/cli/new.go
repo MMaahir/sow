@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"path/filepath"
 	"strings"
 
@@ -39,22 +40,22 @@ func newCommand(env Env) *cobra.Command {
 				given[q.Key] = flag.Value.String()
 			}
 		}
+		// Every source is checked before any error is returned, so one run
+		// reports every problem with the answers.
+		var problems []error
 		sources := []answers.Answers{given}
 		if preset != "" {
 			fromPreset, err := answers.Preset(preset)
-			if err != nil {
-				return err
-			}
+			problems = append(problems, err)
 			sources = append(sources, fromPreset)
 		}
 		personal, err := answers.ReadPersonalDefaults(personalDefaultsPath(env))
-		if err != nil {
-			return err
-		}
+		problems = append(problems, err)
 		sources = append(sources, personal)
 
 		resolved, err := answers.Resolve(sources...)
-		if err != nil {
+		problems = append(problems, err)
+		if err := errors.Join(problems...); err != nil {
 			return err
 		}
 		return project.New(cmd.Context(), project.Options{

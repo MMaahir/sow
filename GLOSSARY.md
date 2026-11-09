@@ -11,7 +11,7 @@ An optional part of the template that a project can turn on, such as `backend`, 
 _Avoid_: layer, module, plugin, feature
 
 **Stack**:
-The implementation a component uses, such as `ts` or `go` for `backend`, or `react` for `frontend`.
+The implementation a component uses, such as `ts` or `go` for `backend`, `react` for `frontend`, or `postgres` for `database`. Every component has at least one.
 _Avoid_: flavour, language (on its own)
 
 **Stack interface**:

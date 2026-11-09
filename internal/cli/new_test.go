@@ -118,6 +118,39 @@ func TestNewReportsEveryMissingPersonalAnswer(t *testing.T) {
 	}
 }
 
+func TestNewReportsEveryMissingPersonalAnswerWithoutAPersonalDefaultsFile(t *testing.T) {
+	s := newSandbox(t)
+	s.removePersonalDefaults()
+
+	got := s.run("new", "demo", "--no-input")
+
+	if got.code != 1 {
+		t.Errorf("exit code = %d, want 1", got.code)
+	}
+	wantContains(t, got.stderr, "--user-name", "--user-email", "--github-user")
+	if s.exists("demo") {
+		t.Error("sow new created demo despite the missing answers")
+	}
+}
+
+func TestNewReportsProblemsFromEverySourceInOneRun(t *testing.T) {
+	s := newSandbox(t)
+	s.writePersonalDefaults("nickname: Tester\nshoe_size: 9\n")
+
+	got := s.run("new", "Demo", "--no-input", "--preset", "everything", "--backend", "cobol")
+
+	if got.code != 1 {
+		t.Errorf("exit code = %d, want 1", got.code)
+	}
+	wantContains(t, got.stderr,
+		`there is no preset "everything"`,
+		"sets nickname",
+		"sets shoe_size",
+		`project_name can't be "Demo"`,
+		`backend can't be "cobol"`,
+		"--user-name")
+}
+
 func TestNewReadsPersonalDefaultsFromXDGConfigHome(t *testing.T) {
 	s := newSandbox(t)
 	s.writePersonalDefaults("")
