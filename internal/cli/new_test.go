@@ -14,13 +14,13 @@ func TestNewRendersTheProjectAndCommitsIt(t *testing.T) {
 	if got, want := s.read("demo/README.md"), "# demo\n\n## Getting started\n\nInstall the tools:\n\n    mise install\n\nCheck the project:\n\n    mise run check\n"; got != want {
 		t.Errorf("README.md = %q, want %q", got, want)
 	}
-	if got, want := s.git("demo", "log", "--format=%s"), "chore: initial commit from sow"; got != want {
+	if got, want := s.git("log", "--format=%s"), "chore: initial commit from sow"; got != want {
 		t.Errorf("commit subjects = %q, want %q", got, want)
 	}
-	if got, want := s.git("demo", "branch", "--show-current"), "main"; got != want {
+	if got, want := s.git("branch", "--show-current"), "main"; got != want {
 		t.Errorf("branch = %q, want %q", got, want)
 	}
-	if got := s.git("demo", "status", "--porcelain"); got != "" {
+	if got := s.git("status", "--porcelain"); got != "" {
 		t.Errorf("uncommitted files after sow new:\n%s", got)
 	}
 }
@@ -72,6 +72,40 @@ func TestNewRendersTheAlwaysOnFiles(t *testing.T) {
 		".env.example explains what it is for": {
 			file: ".env.example",
 			want: []string{"# Local settings and secrets for this project"},
+		},
+		".pre-commit-config.yaml pins the hooks to a release tag": {
+			file: ".pre-commit-config.yaml",
+			want: []string{
+				"https://github.com/pre-commit/pre-commit-hooks",
+				"rev: v6.0.0",
+				"end-of-file-fixer",
+				"trailing-whitespace",
+				"check-yaml",
+				"check-merge-conflict",
+			},
+		},
+		".editorconfig keeps every file clean": {
+			file: ".editorconfig",
+			want: []string{
+				"root = true",
+				"charset = utf-8",
+				"end_of_line = lf",
+				"insert_final_newline = true",
+				"trim_trailing_whitespace = true",
+				"indent_style = space",
+				"indent_size = 2",
+			},
+		},
+		".gitignore ignores the secrets and the machine's files": {
+			file: ".gitignore",
+			want: []string{".DS_Store", ".env"},
+		},
+		"LICENSE is the MIT licence with the personal name as the holder": {
+			file: "LICENSE",
+			want: []string{
+				"Copyright (c) 2026 Test User",
+				"Permission is hereby granted, free of charge",
+			},
 		},
 	}
 	for name, test := range tests {
@@ -127,6 +161,37 @@ func TestNewDoesNotRenderDotEnv(t *testing.T) {
 	}
 	if s.exists("demo/.env") {
 		t.Error(".env was rendered, but the template never contains .env")
+	}
+}
+
+func TestNewRendersTheLicenceWithTheNameOfPersonalDefaults(t *testing.T) {
+	s := newSandbox(t)
+
+	s.mustRun("new", "demo", "--no-input", "--user-name", "Ada Lovelace")
+
+	wantContains(t, s.read("demo/LICENSE"), "Copyright (c) 2026 Ada Lovelace")
+}
+
+func TestNewCommitsTheAlwaysOnFilesInTheFirstCommit(t *testing.T) {
+	s := newSandbox(t)
+
+	s.mustRun("new", "demo", "--no-input", "--preset", "minimal")
+
+	files := s.git("ls-tree", "--name-only", "-r", "HEAD")
+	for _, name := range []string{
+		".claude/settings.json",
+		".editorconfig",
+		".env.example",
+		".gitignore",
+		".pre-commit-config.yaml",
+		"AGENTS.md",
+		"LICENSE",
+		"README.md",
+		"mise.toml",
+	} {
+		if !strings.Contains(files, name) {
+			t.Errorf("%s isn't in the first commit", name)
+		}
 	}
 }
 
