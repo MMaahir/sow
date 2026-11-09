@@ -52,6 +52,15 @@ func newCommand(env Env) *cobra.Command {
 		personal, err := answers.ReadPersonalDefaults(personalDefaultsPath(env))
 		problems = append(problems, err)
 		sources = append(sources, personal)
+		// Nothing is asked when a source is already wrong: the author fixes
+		// the preset or the personal defaults file first.
+		if !noInput && errors.Join(problems...) == nil {
+			typed, err := ask(cmd.Context(), env.Prompter, sources)
+			if err != nil {
+				return err
+			}
+			sources = append(sources, typed)
+		}
 
 		resolved, err := answers.Resolve(sources...)
 		problems = append(problems, err)

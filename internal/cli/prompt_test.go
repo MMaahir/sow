@@ -1,0 +1,145 @@
+package cli_test
+
+import (
+	"slices"
+	"testing"
+)
+
+func TestNewAsksForAMissingAnswerWithItsHelp(t *testing.T) {
+	s := newSandbox(t)
+	s.writePersonalDefaults("user_email: test@example.com\ngithub_user: test-user\n")
+	prompter := s.terminal(map[string]string{"user_name": "Ada Lovelace", "backend": "none"})
+
+	s.mustRun("new", "demo")
+
+	if len(prompter.asked) == 0 || prompter.asked[0].Key != "user_name" {
+		t.Fatalf("asked %v, want user_name first", prompter.askedKeys())
+	}
+	if got, want := prompter.asked[0].Help, "Your name, used as the project's author."; got != want {
+		t.Errorf("user_name prompt = %q, want %q", got, want)
+	}
+	wantContains(t, s.read("demo/.sow-answers.yml"), "user_name: Ada Lovelace\n")
+}
+
+func TestNewDoesntAskForAGivenAnswer(t *testing.T) {
+	cases := map[string]struct {
+		personal string
+		args     []string
+		want     []string
+	}{
+		"flags": {
+			personal: "",
+			args: []string{
+				"--user-name", "Ada Lovelace", "--user-email", "ada@example.com",
+				"--github-user", "ada", "--backend", "none",
+			},
+			want: []string{},
+		},
+		"a preset": {
+			personal: "user_name: Test User\nuser_email: test@example.com\ngithub_user: test-user\n",
+			args:     []string{"--preset", "minimal"},
+			want:     []string{},
+		},
+		"the personal defaults file": {
+			personal: "user_name: Test User\nuser_email: test@example.com\ngithub_user: test-user\n",
+			args:     []string{},
+			want:     []string{"backend"},
+		},
+	}
+	for source, c := range cases {
+		t.Run(source, func(t *testing.T) {
+			s := newSandbox(t)
+			s.writePersonalDefaults(c.personal)
+			prompter := s.terminal(map[string]string{"backend": "none"})
+
+			s.mustRun(append([]string{"new", "demo"}, c.args...)...)
+
+			if got := prompter.askedKeys(); !slices.Equal(got, c.want) {
+				t.Errorf("asked %v, want %v", got, c.want)
+			}
+		})
+	}
+}
+
+func TestNewAsksForTheBackendAsAChoiceWithNonePreselected(t *testing.T) {
+	s := newSandbox(t)
+	prompter := s.terminal(map[string]string{"backend": "none"})
+
+	s.mustRun("new", "demo")
+
+	if got, want := prompter.askedKeys(), []string{"backend"}; !slices.Equal(got, want) {
+		t.Fatalf("asked %v, want %v", got, want)
+	}
+	if got := prompter.asked[0].Choices; !slices.Contains(got, "none") {
+		t.Errorf("backend choices = %v, want them to include none", got)
+	}
+	if got, want := prompter.asked[0].Default, "none"; got != want {
+		t.Errorf("backend preselected = %q, want %q", got, want)
+	}
+	wantContains(t, s.read("demo/.sow-answers.yml"), "backend: none\n")
+}
+
+func TestNewRejectsAnInvalidTypedAnswer(t *testing.T) {
+	s := newSandbox(t)
+	s.terminal(map[string]string{"backend": "cobol"})
+
+	got := s.run("new", "demo")
+
+	if got.code != 1 {
+		t.Errorf("exit code = %d, want 1", got.code)
+	}
+	wantContains(t, got.stderr, "backend", "cobol", "none")
+	if s.exists("demo") {
+		t.Error("sow new created demo despite the invalid answer")
+	}
+}
+
+func TestNewRefusesToAskWithoutATerminal(t *testing.T) {
+	s := newSandbox(t)
+
+	got := s.run("new", "demo")
+
+	if got.code != 1 {
+		t.Errorf("exit code = %d, want 1", got.code)
+	}
+	wantContains(t, got.stderr, "isn't a terminal", "--no-input")
+	if s.exists("demo") {
+		t.Error("sow new created demo without a terminal or --no-input")
+	}
+}
+
+func TestNewWithNoInputNeverAsks(t *testing.T) {
+	s := newSandbox(t)
+	s.writePersonalDefaults("")
+	prompter := s.terminal(map[string]string{
+		"user_name": "Ada Lovelace", "user_email": "ada@example.com", "github_user": "ada", "backend": "none",
+	})
+
+	got := s.run("new", "demo", "--no-input")
+
+	if got.code != 1 {
+		t.Errorf("exit code = %d, want 1", got.code)
+	}
+	wantContains(t, got.stderr, "user_name is missing", "--user-name")
+	if asked := prompter.askedKeys(); len(asked) != 0 {
+		t.Errorf("asked %v with --no-input, want nothing", asked)
+	}
+	if s.exists("demo") {
+		t.Error("sow new created demo despite the missing answers")
+	}
+}
+
+func TestNewCancelledPromptCreatesNothing(t *testing.T) {
+	s := newSandbox(t)
+	s.terminal(map[string]string{})
+
+	got := s.run("new", "demo")
+
+	if got.code != 1 {
+		t.Errorf("exit code = %d, want 1", got.code)
+	}
+	wantContains(t, got.stderr, "backend", "user aborted")
+	if s.exists("demo") {
+		t.Error("sow new created demo after the prompt was cancelled")
+	}
+}

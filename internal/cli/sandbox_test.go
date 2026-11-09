@@ -2,12 +2,15 @@ package cli_test
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/MMaahir/sow/internal/answers"
 	"github.com/MMaahir/sow/internal/cli"
 )
 
@@ -23,6 +26,9 @@ type sandbox struct {
 	home string
 	// extraEnv is added to the environment of every run, as "KEY=value".
 	extraEnv []string
+	// prompter answers questions as the author would at a terminal. When it's
+	// nil, stdin isn't a terminal.
+	prompter *scriptedPrompter
 }
 
 // result is what one sow run produced.
@@ -45,14 +51,18 @@ func newSandbox(t *testing.T) *sandbox {
 func (s *sandbox) run(args ...string) result {
 	s.t.Helper()
 	var stdout, stderr bytes.Buffer
-	code := cli.Run(s.t.Context(), args, cli.Env{
+	env := cli.Env{
 		Stdin:   strings.NewReader(""),
 		Stdout:  &stdout,
 		Stderr:  &stderr,
 		Dir:     s.dir,
 		Environ: s.environ(),
 		Version: testVersion,
-	})
+	}
+	if s.prompter != nil {
+		env.Prompter = s.prompter
+	}
+	code := cli.Run(s.t.Context(), args, env)
 	return result{code: code, stdout: stdout.String(), stderr: stderr.String()}
 }
 
@@ -77,6 +87,43 @@ func (s *sandbox) environ() []string {
 		"GIT_COMMITTER_NAME=Test User",
 		"GIT_COMMITTER_EMAIL=test@example.com",
 	}, s.extraEnv...)
+}
+
+// terminal makes stdin a terminal where the author types the typed answers,
+// by key, and returns the prompter that records what sow asked.
+func (s *sandbox) terminal(typed map[string]string) *scriptedPrompter {
+	s.prompter = &scriptedPrompter{typed: typed}
+	return s.prompter
+}
+
+// errCtrlC is what a scriptedPrompter returns when the author presses Ctrl+C.
+var errCtrlC = errors.New("user aborted")
+
+// scriptedPrompter is the author at a terminal. A question the test didn't
+// script behaves as if the author pressed Ctrl+C.
+type scriptedPrompter struct {
+	typed map[string]string
+	// asked lists the questions sow asked, in order.
+	asked []answers.Question
+}
+
+// Ask records q and returns the scripted answer for it.
+func (p *scriptedPrompter) Ask(_ context.Context, q answers.Question) (string, error) {
+	p.asked = append(p.asked, q)
+	answer, ok := p.typed[q.Key]
+	if !ok {
+		return "", errCtrlC
+	}
+	return answer, nil
+}
+
+// askedKeys returns the keys of the questions sow asked, in order.
+func (p *scriptedPrompter) askedKeys() []string {
+	keys := []string{}
+	for _, q := range p.asked {
+		keys = append(keys, q.Key)
+	}
+	return keys
 }
 
 // writePersonalDefaults replaces the personal defaults file.
