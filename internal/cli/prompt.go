@@ -21,7 +21,9 @@ type Prompter interface {
 
 // TerminalPrompter asks questions with huh forms. In must be a terminal.
 type TerminalPrompter struct {
-	In  io.Reader
+	// In is where huh reads keys.
+	In io.Reader
+	// Out is where huh draws the form.
 	Out io.Writer
 }
 

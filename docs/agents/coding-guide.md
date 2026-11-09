@@ -8,7 +8,7 @@ The ticket says what to build. This guide says how. If they disagree on how, thi
 
 | Path | What lives there | What never lives there |
 |---|---|---|
-| `cmd/sow/main.go` | Reads the real process (arguments, streams, environment, working directory, build version) and calls `cli.Run` | Any logic. Don't add files to `cmd/sow` |
+| `cmd/sow/main.go` | Reads the real process (arguments, streams, environment, working directory, build version, whether stdin is a terminal) and calls `cli.Run` | Any logic. Don't add files to `cmd/sow` |
 | `internal/cli/` | One file per command. Flags, argument checks, and one call into another package | File writing, rendering, starting processes |
 | `internal/answers/` | The questions, presets, validation, the answers file and the personal defaults file | Anything about disk layout of a project |
 | `internal/render/` | Turns template directories and answers into files. Implements the template format in ADR 0012 | Knowledge of specific answers or components |
@@ -69,9 +69,9 @@ Each rule has a reason. The rule still applies when the reason seems not to.
 5. **An error the author will see tells them what to do next.** `user_name is missing: pass --user-name or set user_name in the personal defaults file`. Name the flag, the file or the command.
 6. **Report every problem at once when validating.** Collect errors and return `errors.Join(problems...)`, as `answers.Resolve` does. The author shouldn't fix one answer only to hit the next.
 7. **Check before you write.** Validate and render everything in memory first, then write files, then start commands. `project.New` does this. A failure in validation must leave nothing on disk.
-8. **No new dependencies.** The module uses cobra and a YAML library. `huh` joins when the prompt ticket adds it. Anything else needs a ticket that names it. The standard library covers the rest: `slices`, `maps`, `strings`, `errors`, `os`, `io/fs`, `path/filepath`, `text/template`.
+8. **No new dependencies.** The module uses cobra, `huh` (`charm.land/huh/v2`) for prompts and a YAML library. `cmd/sow/main.go` also imports `github.com/charmbracelet/x/term`, which huh already depends on, to check whether stdin is a terminal. Anything else needs a ticket that names it. The standard library covers the rest: `slices`, `maps`, `strings`, `errors`, `os`, `io/fs`, `path/filepath`, `text/template`.
 9. **No package-level variables that change.** Package-level `var` is allowed only for values set once and never reassigned, such as a compiled `regexp` or the `presets` map. No `init()` functions.
-10. **No interface until two real implementations exist.** Don't add one for testing. Tests use the real file system in a temporary directory and real `git`.
+10. **No interface until two real implementations exist.** Don't add one for testing. Tests use the real file system in a temporary directory and real `git`. The one exception is `cli.Prompter`, because a test has no terminal to type into. Its only real implementation is `cli.TerminalPrompter`, and the ticket that added prompts named this seam.
 11. **No goroutines, channels, generics or reflection** unless the ticket asks for them.
 12. **`context.Context` is the first parameter** of any function that starts a command or can take long. Pass the one you were given. Never call `context.Background()` outside `cmd/sow/main.go`.
 13. **Use `filepath` for paths on disk and `path` for paths inside the template.** The template file system always uses forward slashes. Convert with `filepath.FromSlash` when writing.
@@ -90,6 +90,8 @@ Each rule has a reason. The rule still applies when the reason seems not to.
 There are two places to test. Don't test anywhere else unless your ticket names a new seam.
 
 - **`cli.Run`, through the sandbox** in `internal/cli/sandbox_test.go`. This is the default. A test creates a sandbox, runs `sow` with arguments, and checks the exit code, the output and the files. Everything in `answers` and `project` is tested this way.
+
+  The sandbox replaces the terminal through one seam, `Env.Prompter`. `cmd/sow/main.go` sets it only when stdin is a terminal, and the sandbox leaves it unset, so a plain `s.run` has no terminal. To answer prompts, call `s.terminal(map[string]string{"backend": "none"})` before the run. It returns a scripted prompter that answers by key and records each question in `asked`. A question the test didn't script acts as Ctrl+C.
 - **`render.Render`, with an in-memory template** (`fstest.MapFS`), in `internal/render/render_test.go`. Use it only for rules of the template format, such as what happens when two directories contain the same path.
 
 Don't write tests for unexported functions, and don't write tests in `internal/answers` or `internal/project`. If something there can't be reached through `cli.Run`, it's either dead code or the ticket should name a seam.
