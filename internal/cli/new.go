@@ -52,6 +52,13 @@ func newCommand(env Env) *cobra.Command {
 			return err
 		}
 		sources = append(sources, personal)
+		if !noInput {
+			typed, err := ask(cmd.Context(), env.Prompter, sources)
+			if err != nil {
+				return err
+			}
+			sources = append(sources, typed)
+		}
 
 		resolved, err := answers.Resolve(sources...)
 		if err != nil {

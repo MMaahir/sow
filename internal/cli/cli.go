@@ -28,6 +28,9 @@ type Env struct {
 	Environ []string
 	// Version is the sow release, without a leading "v".
 	Version string
+	// Prompter asks the author for answers. It's nil when stdin isn't a
+	// terminal, and then sow new refuses to ask.
+	Prompter Prompter
 }
 
 // Getenv returns the value of key in e.Environ, or "" if it isn't set.
