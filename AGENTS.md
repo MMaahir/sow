@@ -1,10 +1,21 @@
 # sow
 
-A CLI that generates and updates Python and TypeScript web projects from one Copier template. It's a personal internal tool, built to learn SRE, DevOps and platform engineering.
+A Go CLI that generates and updates TypeScript and Go web projects from one template. It's a personal internal tool, built to learn SRE, DevOps and platform engineering.
 
-Read `docs/roadmap.md` before planning or implementing anything: it holds the decided scope, stack and release plan. `docs/related-projects/` describes the agent skills and `platform` repos that sow depends on.
+Agents write the code. The author writes the infrastructure files by hand and doesn't read Go.
 
-Read `docs/agents/copier-gotchas.md` before writing `copier.yml`, template files or CLI tests: it lists Copier, Jinja and test-harness behaviour the docs don't state.
+## Before you write anything
+
+1. Read `docs/agents/workflow.md`. It says how to pick a ticket, build it, get it reviewed and merge it.
+2. Read `docs/agents/coding-guide.md` before writing Go or template files. Follow it exactly.
+3. Read `docs/roadmap.md` before planning. It holds the decided scope, stack and release plan.
+
+## Hard rules
+
+- Never create or edit an infrastructure file: GitHub Actions workflows, Dockerfiles, Compose files, Helm charts, Argo CD manifests, Terraform, Renovate config, Prometheus rules. They belong to the author (ADR 0013). If your ticket seems to need one, leave the gap and say so in the PR.
+- Never work on a ticket labelled `ready-for-human`.
+- `mise run check` must pass before you commit.
+- Use the terms in `GLOSSARY.md`. Don't use the words it lists under "Avoid".
 
 ## Agent skills
 
@@ -18,4 +29,6 @@ The five default triage labels, each named after its role. See `docs/agents/tria
 
 ### Domain docs
 
-Single-context: one `GLOSSARY.md` and `docs/adr/` at the repo root, created when the first term or decision is resolved. See `docs/agents/domain.md`.
+Single-context: one `GLOSSARY.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
+`docs/related-projects/` describes the agent skills and `platform` repos that sow depends on.

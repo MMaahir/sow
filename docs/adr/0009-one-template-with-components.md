@@ -1,3 +1,7 @@
+---
+status: superseded by ADR-0012
+---
+
 # One Copier template, with components turned on by answers
 
 Generated projects come from a single Copier template. Its `copier.yml` sits at the root of this repo with `_subdirectory: template`, so a tag on this repo, such as `v0.1.0`, is both the CLI's version and the template's version. Answers like `backend: none | python | ts` and `database: true` turn components on. Each stack lives in its own conditional directory, such as `{% if backend == "python" %}backend{% endif %}`, so most files contain no `{% if %}`. Only shared files like `AGENTS.md`, `.claude/settings.json`, `.env.example`, the Compose file and the CI workflows branch on answers.

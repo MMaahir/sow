@@ -4,5 +4,5 @@ The frontend and backend stacks will probably change while the author is learnin
 
 ## Consequences
 
-- OpenAPI is the contract between frontend and backend, whatever languages they use. Hono's RPC client was rejected because only TypeScript can use it.
+- OpenAPI is the contract between frontend and backend, whatever languages they use. Hono's RPC client was rejected because only TypeScript can use it, and `backend: go` has to serve the same frontend.
 - The first frontend is a Vite + React single-page app rather than Next.js. A separate backend already exists, so Next.js's server features would overlap with it. Next.js can return later as a second frontend stack.

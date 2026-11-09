@@ -1,6 +1,8 @@
 # Roadmap feasibility checks
 
-> **Historical.** This note reviewed the earlier layered-template plan. ADR 0009 (one template with components) and ADR 0010 (rules for running Copier) have since settled template sourcing, the update procedure and the task policy, so the sections on multi-template composition, update transactions and task trust no longer describe the current plan. The source checks on Copier, GitHub, AWS and the toolchain are still useful.
+> **Historical.** The CLI no longer uses Copier or Python (ADR 0012), so the Copier sections and the Python tool checks below are obsolete. The checks on GitHub, release-please, AWS and Renovate still apply to the author's infrastructure tickets.
+>
+> Earlier note: This note reviewed the earlier layered-template plan. ADR 0009 (one template with components) and ADR 0010 (rules for running Copier) have since settled template sourcing, the update procedure and the task policy, so the sections on multi-template composition, update transactions and task trust no longer describe the current plan. The source checks on Copier, GitHub, AWS and the toolchain are still useful.
 
 Checked 2026-10-14 against primary sources. These are findings and proposed checks for the roadmap review, not new project decisions. No generated project or release pipeline has been exercised. Claims about a possible implementation are conditional because the roadmap does not specify that implementation.
 

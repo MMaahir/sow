@@ -6,7 +6,7 @@ Notes for the agent skills repo, gathered while planning sow. Read this before y
 
 sow depends on a contract, not on what the skills say:
 
-- One plugin marketplace (this repo) holding several plugins split by stack, for example `core`, `python`, `typescript`, `platform`.
+- One plugin marketplace (this repo) holding several plugins split by stack, for example `core`, `typescript`, `go`, `platform`.
 - Each generated project enables only the plugins that fit the components chosen for it.
 - The `typescript` plugin carries the Vite+ guidance: use the mise tasks, call `vp` directly only for commands without a task, and never call `vite`, `vitest`, `oxlint` or `oxfmt` directly. Generated projects never run Vite+'s own agent setup (sow's ADR 0011).
 - Claude Code gets the enablement through `.claude/settings.json`: `extraKnownMarketplaces` points at this repo and `enabledPlugins` lists the plugins.
