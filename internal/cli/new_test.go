@@ -1,6 +1,7 @@
 package cli_test
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -39,6 +40,93 @@ backend: none
 `
 	if got := s.read("demo/.sow-answers.yml"); got != want {
 		t.Errorf(".sow-answers.yml =\n%s\nwant\n%s", got, want)
+	}
+}
+
+func TestNewRendersTheAlwaysOnFiles(t *testing.T) {
+	tests := map[string]struct {
+		file string
+		want []string
+	}{
+		"AGENTS.md tells agents to use the mise tasks": {
+			file: "AGENTS.md",
+			want: []string{
+				"Use the mise tasks in `mise.toml`",
+				"Never call a tool directly when a mise task exists",
+				"mise run check",
+			},
+		},
+		".claude/settings.json declares the skills marketplace": {
+			file: ".claude/settings.json",
+			want: []string{
+				"extraKnownMarketplaces",
+				"mattpocock/skills",
+				"enabledPlugins",
+				"mattpocock-skills@mattpocock",
+			},
+		},
+		"mise.toml loads the env file and gives the check task": {
+			file: "mise.toml",
+			want: []string{".env", "pre-commit run --all-files"},
+		},
+		".env.example explains what it is for": {
+			file: ".env.example",
+			want: []string{"# Local settings and secrets for this project"},
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			s := newSandbox(t)
+
+			s.mustRun("new", "demo", "--no-input", "--preset", "minimal")
+
+			wantContains(t, s.read("demo/"+test.file), test.want...)
+		})
+	}
+}
+
+func TestNewRendersClaudeSettingsAsValidJSON(t *testing.T) {
+	s := newSandbox(t)
+
+	s.mustRun("new", "demo", "--no-input", "--preset", "minimal")
+
+	var settings struct {
+		ExtraKnownMarketplaces map[string]struct {
+			Source struct {
+				Source string
+				Repo   string
+			}
+		}
+		EnabledPlugins map[string]bool
+	}
+	if err := json.Unmarshal([]byte(s.read("demo/.claude/settings.json")), &settings); err != nil {
+		t.Fatalf("parse .claude/settings.json: %v", err)
+	}
+	marketplace, ok := settings.ExtraKnownMarketplaces["mattpocock"]
+	if !ok {
+		t.Fatal("the mattpocock marketplace is missing from extraKnownMarketplaces")
+	}
+	if marketplace.Source.Source != "github" {
+		t.Errorf("the marketplace source is %q, want %q", marketplace.Source.Source, "github")
+	}
+	if marketplace.Source.Repo != "mattpocock/skills" {
+		t.Errorf("the marketplace repo is %q, want %q", marketplace.Source.Repo, "mattpocock/skills")
+	}
+	if !settings.EnabledPlugins["mattpocock-skills@mattpocock"] {
+		t.Error("the mattpocock-skills@mattpocock plugin isn't enabled")
+	}
+}
+
+func TestNewDoesNotRenderDotEnv(t *testing.T) {
+	s := newSandbox(t)
+
+	s.mustRun("new", "demo", "--no-input", "--preset", "minimal")
+
+	if !s.exists("demo/.env.example") {
+		t.Error(".env.example doesn't exist")
+	}
+	if s.exists("demo/.env") {
+		t.Error(".env was rendered, but the template never contains .env")
 	}
 }
 
