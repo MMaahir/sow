@@ -170,12 +170,11 @@ func (s *sandbox) exists(name string) bool {
 	return err == nil
 }
 
-// git runs git in a directory under the working directory and returns its
-// trimmed output.
-func (s *sandbox) git(dir string, args ...string) string {
+// git runs git in the project directory and returns its trimmed output.
+func (s *sandbox) git(args ...string) string {
 	s.t.Helper()
 	cmd := exec.CommandContext(s.t.Context(), "git", args...)
-	cmd.Dir = filepath.Join(s.dir, dir)
+	cmd.Dir = filepath.Join(s.dir, "demo")
 	cmd.Env = s.environ()
 	output, err := cmd.CombinedOutput()
 	if err != nil {

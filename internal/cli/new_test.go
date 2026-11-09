@@ -1,6 +1,9 @@
 package cli_test
 
 import (
+	"encoding/json"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -10,16 +13,16 @@ func TestNewRendersTheProjectAndCommitsIt(t *testing.T) {
 
 	s.mustRun("new", "demo", "--no-input")
 
-	if got, want := s.read("demo/README.md"), "# demo\n"; got != want {
+	if got, want := s.read("demo/README.md"), "# demo\n\n## Getting started\n\nInstall the tools:\n\n    mise install\n\nCheck the project:\n\n    mise run check\n"; got != want {
 		t.Errorf("README.md = %q, want %q", got, want)
 	}
-	if got, want := s.git("demo", "log", "--format=%s"), "chore: initial commit from sow"; got != want {
+	if got, want := s.git("log", "--format=%s"), "chore: initial commit from sow"; got != want {
 		t.Errorf("commit subjects = %q, want %q", got, want)
 	}
-	if got, want := s.git("demo", "branch", "--show-current"), "main"; got != want {
+	if got, want := s.git("branch", "--show-current"), "main"; got != want {
 		t.Errorf("branch = %q, want %q", got, want)
 	}
-	if got := s.git("demo", "status", "--porcelain"); got != "" {
+	if got := s.git("status", "--porcelain"); got != "" {
 		t.Errorf("uncommitted files after sow new:\n%s", got)
 	}
 }
@@ -39,6 +42,158 @@ backend: none
 `
 	if got := s.read("demo/.sow-answers.yml"); got != want {
 		t.Errorf(".sow-answers.yml =\n%s\nwant\n%s", got, want)
+	}
+}
+
+func TestNewRendersTheAlwaysOnFiles(t *testing.T) {
+	tests := map[string]struct {
+		file string
+		want []string
+	}{
+		"AGENTS.md tells agents to use the mise tasks": {
+			file: "AGENTS.md",
+			want: []string{
+				"Use the mise tasks in `mise.toml`",
+				"Never call a tool directly when a mise task exists",
+				"mise run check",
+			},
+		},
+		".claude/settings.json declares the skills marketplace": {
+			file: ".claude/settings.json",
+			want: []string{
+				"extraKnownMarketplaces",
+				"mattpocock/skills",
+				"enabledPlugins",
+				"mattpocock-skills@mattpocock",
+			},
+		},
+		"mise.toml loads the env file and gives the check task": {
+			file: "mise.toml",
+			want: []string{".env", "pre-commit run --all-files"},
+		},
+		".env.example explains what it is for": {
+			file: ".env.example",
+			want: []string{"# Local settings and secrets for this project"},
+		},
+		".pre-commit-config.yaml pins the hooks to a release tag": {
+			file: ".pre-commit-config.yaml",
+			want: []string{
+				"https://github.com/pre-commit/pre-commit-hooks",
+				"rev: v6.0.0",
+				"end-of-file-fixer",
+				"trailing-whitespace",
+				"check-yaml",
+				"check-merge-conflict",
+			},
+		},
+		".editorconfig keeps every file clean": {
+			file: ".editorconfig",
+			want: []string{
+				"root = true",
+				"charset = utf-8",
+				"end_of_line = lf",
+				"insert_final_newline = true",
+				"trim_trailing_whitespace = true",
+				"indent_style = space",
+				"indent_size = 2",
+			},
+		},
+		".gitignore ignores the secrets and the machine's files": {
+			file: ".gitignore",
+			want: []string{".DS_Store", ".env"},
+		},
+		"LICENSE is the MIT licence with the personal name as the holder": {
+			file: "LICENSE",
+			want: []string{
+				"Copyright (c) 2026 Test User",
+				"Permission is hereby granted, free of charge",
+			},
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			s := newSandbox(t)
+
+			s.mustRun("new", "demo", "--no-input", "--preset", "minimal")
+
+			wantContains(t, s.read("demo/"+test.file), test.want...)
+		})
+	}
+}
+
+func TestNewRendersClaudeSettingsAsValidJSON(t *testing.T) {
+	s := newSandbox(t)
+
+	s.mustRun("new", "demo", "--no-input", "--preset", "minimal")
+
+	var settings struct {
+		ExtraKnownMarketplaces map[string]struct {
+			Source struct {
+				Source string
+				Repo   string
+			}
+		}
+		EnabledPlugins map[string]bool
+	}
+	if err := json.Unmarshal([]byte(s.read("demo/.claude/settings.json")), &settings); err != nil {
+		t.Fatalf("parse .claude/settings.json: %v", err)
+	}
+	marketplace, ok := settings.ExtraKnownMarketplaces["mattpocock"]
+	if !ok {
+		t.Fatal("the mattpocock marketplace is missing from extraKnownMarketplaces")
+	}
+	if marketplace.Source.Source != "github" {
+		t.Errorf("the marketplace source is %q, want %q", marketplace.Source.Source, "github")
+	}
+	if marketplace.Source.Repo != "mattpocock/skills" {
+		t.Errorf("the marketplace repo is %q, want %q", marketplace.Source.Repo, "mattpocock/skills")
+	}
+	if !settings.EnabledPlugins["mattpocock-skills@mattpocock"] {
+		t.Error("the mattpocock-skills@mattpocock plugin isn't enabled")
+	}
+}
+
+func TestNewDoesNotRenderDotEnv(t *testing.T) {
+	s := newSandbox(t)
+
+	s.mustRun("new", "demo", "--no-input", "--preset", "minimal")
+
+	if !s.exists("demo/.env.example") {
+		t.Error(".env.example doesn't exist")
+	}
+	if s.exists("demo/.env") {
+		t.Error(".env was rendered, but the template never contains .env")
+	}
+}
+
+func TestNewRendersTheLicenceWithTheNameOfPersonalDefaults(t *testing.T) {
+	s := newSandbox(t)
+
+	s.mustRun("new", "demo", "--no-input", "--user-name", "Ada Lovelace")
+
+	wantContains(t, s.read("demo/LICENSE"), "Copyright (c) 2026 Ada Lovelace")
+}
+
+func TestNewCommitsTheAlwaysOnFilesInTheFirstCommit(t *testing.T) {
+	s := newSandbox(t)
+
+	s.mustRun("new", "demo", "--no-input", "--preset", "minimal")
+
+	files := s.git("ls-tree", "--name-only", "-r", "HEAD")
+	for _, name := range []string{
+		".claude/settings.json",
+		".editorconfig",
+		".env.example",
+		".gitignore",
+		".pre-commit-config.yaml",
+		"AGENTS.md",
+		"LICENSE",
+		"README.md",
+		"mise.toml",
+	} {
+		if !strings.Contains(files, name) {
+			t.Errorf("%s isn't in the first commit", name)
+		}
 	}
 }
 
@@ -220,4 +375,24 @@ func TestVersionFlagPrintsTheVersion(t *testing.T) {
 	got := s.mustRun("--version")
 
 	wantContains(t, got.stdout, "1.2.3")
+}
+
+func TestNewMinimalProjectHealthPreCommitRunsClean(t *testing.T) {
+	if testing.Short() {
+		t.Skip("generated project health tests are slow: run mise run test-health")
+	}
+	if _, err := exec.LookPath("pre-commit"); err != nil {
+		t.Skip("pre-commit isn't installed: install it to run this test")
+	}
+	s := newSandbox(t)
+
+	s.mustRun("new", "demo", "--no-input", "--preset", "minimal")
+
+	cmd := exec.CommandContext(s.t.Context(), "pre-commit", "run", "--all-files")
+	cmd.Dir = filepath.Join(s.dir, "demo")
+	cmd.Env = s.environ()
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("pre-commit run --all-files failed in %s: %v\n%s", cmd.Dir, err, output)
+	}
 }
