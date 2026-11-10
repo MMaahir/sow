@@ -129,6 +129,62 @@ func TestNewWithNoInputNeverAsks(t *testing.T) {
 	}
 }
 
+func TestNewRejectsAnInvalidNameBeforeAsking(t *testing.T) {
+	s := newSandbox(t)
+	prompter := s.terminal(map[string]string{"backend": "none"})
+
+	got := s.run("new", "Demo")
+
+	if got.code != 1 {
+		t.Errorf("exit code = %d, want 1", got.code)
+	}
+	wantContains(t, got.stderr, `project_name can't be "Demo"`, "lowercase letters")
+	if asked := prompter.askedKeys(); len(asked) != 0 {
+		t.Errorf("asked %v, want nothing", asked)
+	}
+	if s.exists("Demo") {
+		t.Error("sow new created Demo despite the invalid name")
+	}
+}
+
+func TestNewRejectsAnExistingDirectoryBeforeAsking(t *testing.T) {
+	s := newSandbox(t)
+	s.write(s.dir, "demo/notes.txt", "mine\n")
+	prompter := s.terminal(map[string]string{"backend": "none"})
+
+	got := s.run("new", "demo")
+
+	if got.code != 1 {
+		t.Errorf("exit code = %d, want 1", got.code)
+	}
+	wantContains(t, got.stderr, "demo already exists")
+	if asked := prompter.askedKeys(); len(asked) != 0 {
+		t.Errorf("asked %v, want nothing", asked)
+	}
+	if got, want := s.read("demo/notes.txt"), "mine\n"; got != want {
+		t.Errorf("notes.txt = %q, want it untouched", got)
+	}
+}
+
+func TestNewRejectsAnInvalidGivenBackendBeforeAsking(t *testing.T) {
+	s := newSandbox(t)
+	s.removePersonalDefaults()
+	prompter := s.terminal(map[string]string{"user_name": "Ada Lovelace"})
+
+	got := s.run("new", "demo", "--backend", "cobol")
+
+	if got.code != 1 {
+		t.Errorf("exit code = %d, want 1", got.code)
+	}
+	wantContains(t, got.stderr, `backend can't be "cobol"`, "none, ts")
+	if asked := prompter.askedKeys(); len(asked) != 0 {
+		t.Errorf("asked %v, want nothing", asked)
+	}
+	if s.exists("demo") {
+		t.Error("sow new created demo despite the invalid backend")
+	}
+}
+
 func TestNewCancelledPromptCreatesNothing(t *testing.T) {
 	s := newSandbox(t)
 	s.terminal(map[string]string{})
