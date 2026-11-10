@@ -76,8 +76,9 @@ A preset only sets answers at `sow new`. When a preset gains a component, existi
   - TypeScript 7, with Vite+ for tests, linting, formatting and type-checking (`vp test`, `vp check`)
   - `node --watch src/index.ts` for development, using Node's type stripping, and `vp pack` for builds, with dependencies left outside the bundle
   - a multi-stage Dockerfile: build on the Vite+ image, run on `node:24-slim`
-- **`backend: go`**
-  - the framework and libraries are decided when the 0.7 spec is written
+- **`backend: go`** ([ADR 0014](adr/0014-go-backend-uses-huma-pgx-sqlc-goose-and-slog.md))
+  - Go's `net/http` server and `ServeMux`, with huma registering each route and building `openapi.json` from the same call
+  - `log/slog` JSON logs, golangci-lint for lint and type errors, and `go test`
   - a multi-stage Dockerfile on a distroless or scratch base image
 - **`frontend: react`**
   - Vite+ (`vp dev`, `vp build`, `vp test`, `vp check`), React, TanStack Router and TanStack Query
@@ -90,7 +91,7 @@ A preset only sets answers at `sow new`. When a preset gains a component, existi
   - `.vscode/extensions.json` and `.vscode/settings.json` setting up the Oxc extension as the formatter
 - **`database`**
   - Postgres
-  - Prisma (latest stable 7.x) for TypeScript. The Go library is decided with `backend: go`
+  - Prisma (latest stable 7.x) for TypeScript. pgx v5 with sqlc for Go, and goose for Go migrations ([ADR 0014](adr/0014-go-backend-uses-huma-pgx-sqlc-goose-and-slog.md))
   - migrations run as their own deploy step
 - **`observability`**
   - the OpenTelemetry SDK in every service, and web-vitals on the frontend
