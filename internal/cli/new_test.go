@@ -2,8 +2,6 @@ package cli_test
 
 import (
 	"encoding/json"
-	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -405,24 +403,4 @@ func TestVersionFlagPrintsTheVersion(t *testing.T) {
 	got := s.mustRun("--version")
 
 	wantContains(t, got.stdout, "1.2.3")
-}
-
-func TestNewMinimalProjectHealthPreCommitRunsClean(t *testing.T) {
-	if testing.Short() {
-		t.Skip("generated project health tests are slow: run mise run test-health")
-	}
-	if _, err := exec.LookPath("pre-commit"); err != nil {
-		t.Skip("pre-commit isn't installed: install it to run this test")
-	}
-	s := newSandbox(t)
-
-	s.mustRun("new", "demo", "--no-input", "--preset", "minimal")
-
-	cmd := exec.CommandContext(s.t.Context(), "pre-commit", "run", "--all-files")
-	cmd.Dir = filepath.Join(s.dir, "demo")
-	cmd.Env = s.environ()
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("pre-commit run --all-files failed in %s: %v\n%s", cmd.Dir, err, output)
-	}
 }

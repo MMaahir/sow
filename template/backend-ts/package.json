@@ -1,0 +1,9 @@
+{
+  "name": "workspace",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "vite-plus": "catalog:"
+  },
+  "packageManager": "pnpm@12.4.2"
+}

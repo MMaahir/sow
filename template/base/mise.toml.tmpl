@@ -1,0 +1,12 @@
+[env]
+_.file = ".env"
+
+[tasks.check]
+description = "Run every check on the project"
+run = [
+  "pre-commit run --all-files",
+[[- if ne .backend "none" ]]
+  "mise --cd backend run lint",
+  "mise --cd backend run test",
+[[- end ]]
+]

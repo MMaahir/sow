@@ -1,6 +1,0 @@
-[env]
-_.file = ".env"
-
-[tasks.check]
-description = "Run the pre-commit hooks on every file"
-run = "pre-commit run --all-files"

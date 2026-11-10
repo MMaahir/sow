@@ -57,7 +57,7 @@ func Questions() []Question {
 		{
 			Key:       "backend",
 			Help:      "Backend stack.",
-			Choices:   []string{None},
+			Choices:   []string{None, "ts"},
 			Default:   None,
 			Component: true,
 		},

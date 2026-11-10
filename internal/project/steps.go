@@ -29,6 +29,11 @@ func followUpSteps() []followUpStep {
 			file: ".env.example",
 			run:  copyEnvExample,
 		},
+		{
+			name: "install the dependencies",
+			file: "pnpm-workspace.yaml",
+			run:  installDependencies,
+		},
 	}
 }
 
@@ -67,4 +72,11 @@ func copyEnvExample(_ context.Context, dir string, _ []string) error {
 		return err
 	}
 	return os.WriteFile(destination, content, 0o644)
+}
+
+// installDependencies runs "vp install" at the project root. Vite+ installs
+// the pnpm version that packageManager names and writes pnpm-lock.yaml, which
+// holds the exact versions of the project's dependencies (ADR 0007).
+func installDependencies(ctx context.Context, dir string, environ []string) error {
+	return run(ctx, environ, dir, "vp", "install")
 }

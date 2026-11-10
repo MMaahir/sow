@@ -121,11 +121,11 @@ func TestRenderFailures(t *testing.T) {
 
 func TestRenderABranchOnItsOwnLinesLeavesNoBlankLines(t *testing.T) {
 	tmpl := fstest.MapFS{"base/tools.txt.tmpl": {Data: []byte(
-		"before\n[[ if eq .backend \"ts\" -]]\nmiddle\n[[ end -]]\nafter\n")}}
+		"before:\n[[- if eq .backend \"ts\" ]]\n  middle\n[[- end ]]\nafter\n")}}
 
 	for backend, want := range map[string]string{
-		"ts":   "before\nmiddle\nafter\n",
-		"none": "before\nafter\n",
+		"ts":   "before:\n  middle\nafter\n",
+		"none": "before:\nafter\n",
 	} {
 		files, err := render.Render(tmpl, []string{"base"}, map[string]string{"backend": backend})
 		if err != nil {
