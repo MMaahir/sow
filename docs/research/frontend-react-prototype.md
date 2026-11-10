@@ -74,7 +74,7 @@ The browser never calls the backend's address. Every request goes to `/api/...` 
   ```
 
   With the backend's `dev` task running on port 3000, `GET http://localhost:5199/api/healthz` on the dev server returned 200 and `{"status":"ok"}`, and `GET /api/nope` returned 404.
-- The dev server's proxy matches `^/api(?=/|$)`, so `/api` and `/api/...` go to the backend and a frontend route such as `/api-keys` doesn't. A plain `"/api"` key would match by prefix and send `/api-keys` to the backend. `src/api-proxy.test.ts` checks the pattern.
+- The dev server's proxy matches `^/api(?=[/?]|$)` against the request URL, so `/api`, `/api/...` and `/api?...` go to the backend and a frontend route such as `/api-keys` doesn't. A plain `"/api"` key would match by prefix and send `/api-keys` to the backend. `src/api-proxy.test.ts` checks the pattern.
 - In containers, nginx does the same job. The author's nginx config needs two rules, and neither was run in this prototype:
   - Requests under `/api/` go to the backend service with the prefix removed. In nginx that is `location /api/ { proxy_pass http://backend:3000/; }`, where the trailing slash on `proxy_pass` removes the prefix. `backend` is the Compose service name and 3000 is the backend's default `PORT`.
   - Every other path that isn't a file serves `index.html`, because TanStack Router reads the route from the address bar. In nginx that is `try_files $uri /index.html`.

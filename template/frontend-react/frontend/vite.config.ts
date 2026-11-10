@@ -2,8 +2,9 @@ import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite-plus";
 
-// apiPath matches the paths the dev server sends to the backend: /api and everything under /api/.
-export const apiPath = /^\/api(?=\/|$)/;
+// apiPath matches the request URLs the dev server sends to the backend: /api, everything under /api/, and either of
+// those with a query string.
+export const apiPath = /^\/api(?=[/?]|$)/;
 
 export default defineConfig({
   plugins: [

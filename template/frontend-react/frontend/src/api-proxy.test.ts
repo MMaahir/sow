@@ -2,7 +2,7 @@ import { expect, test } from "vite-plus/test";
 
 import { apiPath } from "../vite.config";
 
-test.each(["/api", "/api/healthz", "/api/users/1"])(
+test.each(["/api", "/api/healthz", "/api/users/1", "/api?check=1"])(
   "the dev server sends %s to the backend",
   (path) => {
     expect(apiPath.test(path)).toBe(true);
