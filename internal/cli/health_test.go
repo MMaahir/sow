@@ -271,7 +271,9 @@ func TestNewBackendTSProjectHealth(t *testing.T) {
 			t.Skip("docker isn't installed: install it to run this test")
 		}
 
-		s.mustTool("backend", "docker", "build", ".")
+		// The build context is the project root, because the package's
+		// manifest reads its Vite+ version from the root pnpm catalog.
+		s.mustTool(".", "docker", "build", "--file", "backend/Dockerfile", ".")
 	})
 }
 
@@ -356,7 +358,9 @@ export function Wrong({ on }: { on: boolean }) {
 			t.Skip("docker isn't installed: install it to run this test")
 		}
 
-		s.mustTool("frontend", "docker", "build", ".")
+		// The build context is the project root, because the package's
+		// manifest reads its Vite+ version from the root pnpm catalog.
+		s.mustTool(".", "docker", "build", "--file", "frontend/Dockerfile", ".")
 	})
 }
 

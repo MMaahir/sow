@@ -214,6 +214,37 @@ func TestNewRejectsAnInvalidGivenBackendBeforeAsking(t *testing.T) {
 	}
 }
 
+func TestNewRejectsAFrontendWithoutABackendBeforeAsking(t *testing.T) {
+	s := newSandbox(t)
+	s.removePersonalDefaults()
+	prompter := s.terminal(map[string]string{"user_name": "Ada Lovelace"})
+
+	got := s.run("new", "demo", "--backend", "none", "--frontend", "react")
+
+	if got.code != 1 {
+		t.Errorf("exit code = %d, want 1", got.code)
+	}
+	wantContains(t, got.stderr, "frontend needs a backend", "--backend ts")
+	if asked := prompter.askedKeys(); len(asked) != 0 {
+		t.Errorf("asked %v, want nothing", asked)
+	}
+	if s.exists("demo") {
+		t.Error("sow new created demo despite the frontend with no backend")
+	}
+}
+
+func TestNewRejectsAFrontendWithoutABackendWithoutATerminal(t *testing.T) {
+	s := newSandbox(t)
+	s.removePersonalDefaults()
+
+	got := s.run("new", "demo", "--backend", "none", "--frontend", "react")
+
+	if got.code != 1 {
+		t.Errorf("exit code = %d, want 1", got.code)
+	}
+	wantContains(t, got.stderr, "frontend needs a backend", "--backend ts")
+}
+
 func TestNewCancelledPromptCreatesNothing(t *testing.T) {
 	s := newSandbox(t)
 	s.terminal(map[string]string{})

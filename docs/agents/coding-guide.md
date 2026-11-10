@@ -26,7 +26,9 @@ Copy the existing code for each of these. Don't invent a second way.
 
 1. Add one `Question` to the list in `Questions()` in `internal/answers/answers.go`. Put it where it should appear in the answers file.
 2. That's all the wiring. The `--flag`, the validation, the answers file entry and the template value `[[ .your_key ]]` all come from that entry.
-3. If the answer only makes sense when a component is on, set `Needs` to that component's key, as `frontend` does with `Needs: "backend"`. `answers.Resolve` then rejects the answer while that component is `none`, with a message that names the flag to pass, and `sow new` doesn't ask the question when that component is off. Don't write a second check. Add a test like `TestNewRejectsAFrontendWithoutABackend`.
+3. If a component only makes sense when another component is on, set `Needs` to that component's key, as `frontend` does with `Needs: "backend"`. sow then rejects the answer while that component is `none`, before asking anything when both answers were given, with a message that names the flag to pass. It doesn't ask the question when the needed component is off. Don't write a second check. Add tests like `TestNewRejectsAFrontendWithoutABackend` and `TestNewRejectsAFrontendWithoutABackendBeforeAsking`.
+
+   `Needs` works only for a component answer whose default is `none`, and the needed question must come earlier in `Questions()`. A text answer, or a question that comes before the one it needs, needs more code. Stop and comment on the ticket.
 4. Add tests in `internal/cli/new_test.go`: the default is recorded, the flag is recorded, a bad value is rejected and the error lists the choices.
 5. Update the expected file in `TestNewWritesTheAnswersFile`.
 6. If it's a component answer, set it to `none` in the `minimal` preset, so the preset still turns no components on and `sow new --preset minimal` asks nothing about it.

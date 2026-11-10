@@ -42,8 +42,9 @@ export default defineConfig({
 });
 ```
 
-- It works with TypeScript 7. The other two candidates don't. `@hey-api/openapi-ts` 0.99.0 and `openapi-typescript` 7.13.0 both import the TypeScript compiler's JavaScript API, and `typescript` 7.0.2 exports only its version from its main entry. Both stop at start-up with `TypeError: Cannot read properties of undefined`, at `ts.SyntaxKind` and `ts.factory`. orval builds its output from strings and doesn't depend on `typescript`.
+- It works with TypeScript 7. The other two candidates don't. `@hey-api/openapi-ts` 0.99.0 and `openapi-typescript` 7.13.0 both import the TypeScript compiler's JavaScript API, and `typescript` 7.0.2 exports only its version from its main entry. Both stop at start-up with `TypeError: Cannot read properties of undefined`, at `ts.SyntaxKind` and `ts.factory`, because they load the project's TypeScript 7. orval's core builds its output from strings. Two of its packages, `@orval/zod` and `@orval/hono`, do use the compiler API, but they declare their own `typescript` dependency, so pnpm installs TypeScript 6.0.3 for them alongside the project's TypeScript 7, and the project's type-checking stays on 7. If a later orval drops that pin and loads the project's TypeScript, it will fail the same way, and the health test in #60 will catch it.
 - It suits TanStack Query. For `GET /healthz` it writes a fetch function `getHealthz`, a key function `getGetHealthzQueryKey`, `getGetHealthzQueryOptions`, and a hook `useGetHealthz`. A route that called `useGetHealthz()` rendered the backend's status in a test that replaced `fetch` with `vi.stubGlobal`. The response body is at `data.data`, because the fetch function returns `{ data, status, headers }`.
+- Its default fetch client resolves every response, including an HTTP error, so TanStack Query reports a 503 as `status: "success"`. Setting `override.fetch.forceSuccessResponse: true` makes an error response reject, and the query then reports `status: "error"`. A review of this note reproduced both behaviours with orval 8.47.0. The config #60 copies must set it, and #60 adds a test that a failing response puts the query in the error state.
 - It needs no Vite plugin. `pnpm exec orval` runs under Node, so the `generate-client` task is one command.
 - Its output was the same on two runs, byte for byte. The prototype ran on one machine only.
 - It's past 1.0. `@hey-api/openapi-ts` is still 0.x, which ADR 0007 would pin and gate.
@@ -73,6 +74,7 @@ The browser never calls the backend's address. Every request goes to `/api/...` 
   ```
 
   With the backend's `dev` task running on port 3000, `GET http://localhost:5199/api/healthz` on the dev server returned 200 and `{"status":"ok"}`, and `GET /api/nope` returned 404.
+- The dev server's proxy matches `^/api(?=/|$)`, so `/api` and `/api/...` go to the backend and a frontend route such as `/api-keys` doesn't. A plain `"/api"` key would match by prefix and send `/api-keys` to the backend. `src/api-proxy.test.ts` checks the pattern.
 - In containers, nginx does the same job. The author's nginx config needs two rules, and neither was run in this prototype:
   - Requests under `/api/` go to the backend service with the prefix removed. In nginx that is `location /api/ { proxy_pass http://backend:3000/; }`, where the trailing slash on `proxy_pass` removes the prefix. `backend` is the Compose service name and 3000 is the backend's default `PORT`.
   - Every other path that isn't a file serves `index.html`, because TanStack Router reads the route from the address bar. In nginx that is `try_files $uri /index.html`.

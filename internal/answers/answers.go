@@ -47,9 +47,13 @@ type Question struct {
 	// the global vp CLI from Vite+ (ADR 0011).
 	typeScript []string
 	// Needs is the key of a component answer that must be on for this one to
-	// be on. Empty means this answer depends on no other. Resolve rejects
-	// answers that break the rule, and sow doesn't ask a question whose
-	// needed component is off.
+	// be on. Empty means this answer depends on no other. CheckGiven rejects
+	// given answers that break the rule before sow asks anything, Resolve
+	// rejects the rest, and sow doesn't ask a question whose needed component
+	// is off.
+	//
+	// It works for a component answer whose default is None and whose
+	// needed question comes earlier in Questions.
 	Needs string
 }
 
@@ -128,7 +132,56 @@ func CheckGiven(sources ...Answers) error {
 			}
 		}
 	}
+	// Two given answers can conflict, such as a frontend with the backend
+	// given as none. That is known before any question is asked.
+	given := firstGiven(sources)
+	for _, q := range questions {
+		_, keyGiven := given[q.Key]
+		_, neededGiven := given[q.Needs]
+		if !keyGiven || !neededGiven {
+			continue
+		}
+		if err := checkNeeds(q, given); err != nil {
+			problems = append(problems, err)
+		}
+	}
 	return errors.Join(problems...)
+}
+
+// firstGiven returns, for each key, the value from the first source that
+// gives it, which is the value Resolve would use.
+func firstGiven(sources []Answers) Answers {
+	given := Answers{}
+	for _, source := range sources {
+		for key, value := range source {
+			if _, ok := given[key]; !ok {
+				given[key] = value
+			}
+		}
+	}
+	return given
+}
+
+// checkNeeds reports a problem when q's component is on in values but the
+// component it needs is off. It names every stack of the needed component as
+// the fix, as in "pass --backend ts or --backend go".
+func checkNeeds(q Question, values Answers) error {
+	if q.Needs == "" || values[q.Key] == None || values[q.Needs] != None {
+		return nil
+	}
+	flag := "--" + strings.ReplaceAll(q.Needs, "_", "-") + " "
+	var stacks []string
+	for _, needed := range Questions() {
+		if needed.Key != q.Needs {
+			continue
+		}
+		for _, choice := range needed.Choices {
+			if choice != None {
+				stacks = append(stacks, flag+choice)
+			}
+		}
+	}
+	return fmt.Errorf("%s needs a %s: pass %s", q.Key, q.Needs, strings.Join(stacks, " or "))
 }
 
 // Resolve merges sources into one complete set of answers. Sources are listed
@@ -166,26 +219,17 @@ func Resolve(sources ...Answers) (Answers, error) {
 		resolved[q.Key] = value
 	}
 
+	// A conflict between two given answers is CheckGiven's problem to report.
+	given := firstGiven(sources)
 	for _, q := range questions {
-		if q.Needs == "" || resolved[q.Key] == None || resolved[q.Needs] != None {
+		_, keyGiven := given[q.Key]
+		_, neededGiven := given[q.Needs]
+		if keyGiven && neededGiven {
 			continue
 		}
-		// The fix names every stack of the needed component, as in
-		// "pass --backend ts or --backend go".
-		flag := "--" + strings.ReplaceAll(q.Needs, "_", "-") + " "
-		var stacks []string
-		for _, needed := range questions {
-			if needed.Key != q.Needs {
-				continue
-			}
-			for _, choice := range needed.Choices {
-				if choice != None {
-					stacks = append(stacks, flag+choice)
-				}
-			}
+		if err := checkNeeds(q, resolved); err != nil {
+			problems = append(problems, err)
 		}
-		problems = append(problems, fmt.Errorf("%s needs a %s: pass %s",
-			q.Key, q.Needs, strings.Join(stacks, " or ")))
 	}
 
 	if len(problems) > 0 {
