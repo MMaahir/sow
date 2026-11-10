@@ -47,6 +47,12 @@ Add one entry to `presets` in `internal/answers/presets.go`, and tests like `Tes
 2. If the content needs an answer, add `.tmpl` to the file name and read the answer as `[[ .project_name ]]`. The key is the answer's key.
 3. Add a render test that checks the file exists and contains what matters.
 
+### Add a follow-up step
+
+1. Add one `followUpStep` to the list in `followUpSteps` in `internal/project/steps.go`. Set `name` to what the step does, `file` to a path relative to the project root, and `run` to the function that does the work.
+2. The step runs only if its file exists in the project, after the files are written and before the first commit. Its error is wrapped with `name`.
+3. Test it in `internal/cli/new_test.go` through the sandbox: the step's effect is on disk, and whatever it creates stays out of the first commit.
+
 ### Add a command
 
 1. Create `internal/cli/<command>.go` with a function `<command>Command(env Env) *cobra.Command`, shaped like `newCommand` in `internal/cli/new.go`.
