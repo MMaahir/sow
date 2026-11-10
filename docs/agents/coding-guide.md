@@ -71,6 +71,17 @@ Use `run` in `internal/project/new.go`. It finds the executable on the `PATH` of
 
 To test a command sow starts, call `s.fakeTool("vp", script)` in the sandbox. It puts a shell script with that name first on the sandbox's `PATH`.
 
+### Add a docs page
+
+The docs site is for people who use sow. Zensical builds it from `docs/public/` with the settings in `zensical.toml`.
+
+1. Create the page as a Markdown file in `docs/public/`, such as `docs/public/presets.md`. Start it with one `#` heading, which is the page title.
+2. Add the page to `nav` in `zensical.toml`, in the place it should appear: `{ "Presets" = "presets.md" }`. Paths are relative to `docs/public/`.
+3. Link to other pages by their file path relative to the current page, such as `[Install sow](install.md)`. Link to anything outside `docs/public/`, such as an ADR, by its full GitHub URL.
+4. Run `mise run docs-build`. It runs `zensical build --strict`, so a link to a page or anchor that doesn't exist fails the build. The site goes to `site/`, which is gitignored. Run `mise run docs-serve` to read the site at `http://localhost:8000` while you write.
+
+Never move a file from `docs/agents/`, `docs/research/` or `docs/adr/` into `docs/public/`. Those files are for agents and planning, and the site doesn't publish them.
+
 ## 3. Go rules
 
 Each rule has a reason. The rule still applies when the reason seems not to.
