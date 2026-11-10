@@ -98,24 +98,6 @@ func TestNewMinimalDoesNotRunVP(t *testing.T) {
 	s.mustRun("new", "demo", "--no-input", "--preset", "minimal")
 }
 
-func TestNewReportsAMissingToolWithTheCommandAndTheDirectory(t *testing.T) {
-	s := newSandbox(t)
-	s.extraEnv = []string{"PATH=bin:/usr/bin:/bin"}
-	s.write(s.dir, "bin/vp", "#!/bin/sh\nexit 0\n")
-
-	got := s.run("new", "demo", "--no-input", "--backend", "ts")
-
-	if got.code != 1 {
-		t.Errorf("exit code = %d, want 1", got.code)
-	}
-	wantContains(t, got.stderr,
-		"vp install failed in "+filepath.Join(s.dir, "demo"),
-		"vp isn't installed, or isn't on PATH")
-	if !s.exists("demo/backend/package.json") {
-		t.Error("the rendered files are gone after a failed follow-up step")
-	}
-}
-
 func TestNewReportsAFailedFollowUpStepAndKeepsTheFiles(t *testing.T) {
 	s := newSandbox(t)
 	s.fakeTool("vp", `[ "$*" = "env doctor" ] && exit 0; echo registry unreachable >&2; exit 3`)

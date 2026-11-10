@@ -189,7 +189,7 @@ ADR 0012 defines the template format. It's a compatibility contract, because `so
 
    This renders `before:`, `  middle`, `after` on three lines when the backend is `ts`, and `before:`, `after` on two lines otherwise. `[[-` removes every blank line before it too, so a blank line that belongs to the branch goes inside it, as the first line after the `if`. Don't start a file with a branch.
 
-5. **A path belongs to one directory.** If two directories that can be selected together contain the same path, rendering fails. A file that depends on several answers lives in `template/base/` as a `.tmpl`.
+5. **A path belongs to one directory.** If two directories that can be selected together contain the same path, rendering fails. A file that depends on several answers lives in `template/base/` as a `.tmpl`. The one exception is `template/typescript/`: it holds the plain files every TypeScript stack shares, such as the root `package.json` and `pnpm-workspace.yaml`, which rule 1 keeps plain. sow selects it when any TypeScript stack is on. Never copy those files into a stack's own directory.
 6. **Never add a file named `go.mod` under `template/`.** Go's embed skips any directory that contains one. Name it `go.mod.tmpl`.
 7. **Files aren't executable.** The embedded file system drops the executable bit. Call scripts through their interpreter, such as `sh scripts/foo.sh`.
 8. **The template never contains `.env`.** It contains `.env.example`.

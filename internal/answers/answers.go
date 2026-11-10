@@ -43,7 +43,8 @@ type Question struct {
 	// check reports why a value is invalid, or nil. It may be nil.
 	check func(value string) error
 	// typeScript lists the choices that are TypeScript stacks. A project with
-	// one of them needs the global vp CLI from Vite+ (ADR 0011).
+	// one of them gets the shared "typescript" template directory and needs
+	// the global vp CLI from Vite+ (ADR 0011).
 	typeScript []string
 }
 
@@ -159,8 +160,9 @@ func Resolve(sources ...Answers) (Answers, error) {
 }
 
 // Dirs returns the template directories these answers select: "base", then one
-// directory per component that is on, named "<component>-<stack>". ADR 0012
-// fixes this naming rule.
+// directory per component that is on, named "<component>-<stack>", then
+// "typescript" if any of those stacks is a TypeScript stack. ADR 0012 fixes
+// these rules.
 //
 // A component with no answer is off. An answers file written by an older
 // release has no entry for a component added since, and the old render must
@@ -172,6 +174,9 @@ func (a Answers) Dirs() []string {
 		if q.Component && stack != "" && stack != None {
 			dirs = append(dirs, q.Key+"-"+stack)
 		}
+	}
+	if a.TypeScriptOn() {
+		dirs = append(dirs, "typescript")
 	}
 	return dirs
 }

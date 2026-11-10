@@ -2,6 +2,7 @@ package cli_test
 
 import (
 	"encoding/json"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -403,4 +404,22 @@ func TestVersionFlagPrintsTheVersion(t *testing.T) {
 	got := s.mustRun("--version")
 
 	wantContains(t, got.stdout, "1.2.3")
+}
+
+func TestNewReportsAMissingToolWithTheCommandAndTheDirectory(t *testing.T) {
+	s := newSandbox(t)
+	s.extraEnv = []string{"PATH=bin"}
+	s.write(s.dir, "bin/git", "#!/bin/sh\nexit 0\n")
+
+	got := s.run("new", "demo", "--no-input", "--preset", "minimal")
+
+	if got.code != 1 {
+		t.Errorf("exit code = %d, want 1", got.code)
+	}
+	wantContains(t, got.stderr,
+		"git init --initial-branch main failed in "+filepath.Join(s.dir, "demo"),
+		"git isn't installed, or isn't on PATH")
+	if !s.exists("demo/README.md") {
+		t.Error("the rendered files are gone after git failed")
+	}
 }
