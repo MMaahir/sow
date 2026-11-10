@@ -387,6 +387,20 @@ func TestNewMinimalPresetTurnsNoComponentsOn(t *testing.T) {
 	}
 }
 
+func TestNewWebTSPresetRendersBackendAndFrontend(t *testing.T) {
+	s := newSandbox(t)
+	s.fakeTool("vp", fakeVP)
+
+	s.mustRun("new", "demo", "--no-input", "--preset", "web-ts")
+
+	wantContains(t, s.read("demo/.sow-answers.yml"), "backend: ts\n", "frontend: react\n")
+	for _, name := range []string{"backend", "frontend"} {
+		if !s.exists("demo/" + name) {
+			t.Errorf("the web-ts preset rendered no %s directory", name)
+		}
+	}
+}
+
 func TestNewRejectsAnUnknownFrontendAndListsTheChoices(t *testing.T) {
 	s := newSandbox(t)
 
