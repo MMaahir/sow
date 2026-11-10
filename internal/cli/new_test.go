@@ -461,7 +461,7 @@ func TestNewRejectsAnUnknownPresetAndListsThePresets(t *testing.T) {
 	if got.code != 1 {
 		t.Errorf("exit code = %d, want 1", got.code)
 	}
-	wantContains(t, got.stderr, "everything", "minimal")
+	wantContains(t, got.stderr, "everything", "minimal", "web-ts")
 	if s.exists("demo") {
 		t.Error("sow new created demo despite the unknown preset")
 	}
