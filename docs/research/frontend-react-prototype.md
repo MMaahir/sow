@@ -101,3 +101,11 @@ The browser never calls the backend's address. Every request goes to `/api/...` 
 - Everything `docs/research/backend-ts-prototype.md` lists as needing the global `vp` in managed mode.
 - The nginx rules above and the frontend image. The Dockerfile and the nginx config are the author's (#67), and so is the Compose file (#68).
 - That orval's output is the same on another machine or operating system. Ticket #60's health test and the author's CI check cover it.
+
+## The client in the template
+
+Ticket #60 put the client in the template, generated with `orval` 8.47.0. A fresh project's lockfile resolves `orval` to 8.47.0, and the frontend health test proves that version. The test runs `mise run generate-client` in a fresh project and finds no change. It then adds a backend route, exports `openapi.json`, and checks that the task rewrites the client and that `git diff --exit-code` fails.
+
+- The config sets `override.fetch.forceSuccessResponse: true`. Without it, the fetch function returns a response that isn't 2xx as data, and TanStack Query reports `status: "success"` for a 503. With it, the function throws, and the starter route's test checks that a 503 puts the query in the error state. The response body is still at `data.data`.
+- `pnpm-workspace.yaml` sets `allowBuilds: esbuild: false`. pnpm writes the entry after the other keys, so the template keeps it last, where a later install leaves the file unchanged. A project without a frontend installs no esbuild, and the entry changes nothing there.
+- `orval.config.ts` is in the frontend's `tsconfig.json`, so `vp check` type-checks it.
