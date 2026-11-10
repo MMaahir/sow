@@ -401,6 +401,21 @@ func TestNewWebTSPresetRendersBackendAndFrontend(t *testing.T) {
 	}
 }
 
+func TestNewFrontendFlagOverridesTheWebTSPreset(t *testing.T) {
+	s := newSandbox(t)
+	s.fakeTool("vp", fakeVP)
+
+	s.mustRun("new", "demo", "--no-input", "--preset", "web-ts", "--frontend", "none")
+
+	wantContains(t, s.read("demo/.sow-answers.yml"), "backend: ts\n", "frontend: none\n")
+	if s.exists("demo/frontend") {
+		t.Error("--frontend none rendered a frontend directory anyway")
+	}
+	if !s.exists("demo/backend") {
+		t.Error("--frontend none removed the backend directory from the preset")
+	}
+}
+
 func TestNewRejectsAnUnknownFrontendAndListsTheChoices(t *testing.T) {
 	s := newSandbox(t)
 
