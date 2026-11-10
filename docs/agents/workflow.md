@@ -143,6 +143,7 @@ The author's routing. A session that orchestrates others follows it.
 | `difficulty:medium` tickets | Claude Opus |
 | `difficulty:easy` tickets | GLM-5.3-Flash |
 | Code review | First the model that wrote the code, then GPT-6.1-Sol |
+| Any of the above when Claude's rate limits stop the Claude agents | GPT-6.1-Sol, at medium reasoning effort. Its code gets its second review from GPT-6.1-Terra, because the reviewer is never the model that wrote the code |
 
 When a stronger model hands an easy ticket to a smaller one, the brief is the ticket number plus "follow `docs/agents/workflow.md`". Don't restate the ticket. If the ticket isn't clear enough for that, fix the ticket.
 
