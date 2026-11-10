@@ -6,3 +6,12 @@ repos:
       - id: trailing-whitespace
       - id: check-yaml
       - id: check-merge-conflict
+[[ if eq .backend "ts" -]]
+  - repo: local
+    hooks:
+      - id: vp-check
+        name: vp check
+        entry: vp check --fix
+        language: system
+        types_or: [ts, tsx]
+[[ end -]]

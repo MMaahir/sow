@@ -47,3 +47,12 @@ sow keeps the template's pins current the same way. Renovate's npm manager reads
 - The generated `AGENTS.md` sends agents to the mise tasks. They call `vp` directly only for commands without a task, because calling `vp` directly skips the `.env` loading mise does. They never call `vite`, `vitest`, `oxlint` or `oxfmt` directly. More detailed Vite+ guidance belongs in the skills repo's `typescript` plugin.
 - Projects with a TypeScript component ship `.vscode/extensions.json` recommending `oxc.oxc-vscode` and `.vscode/settings.json` making it the formatter, so editors format with the root Vite+ config.
 - The CI audit job keeps `pnpm audit`; `vp pm audit` just passes the call through to it.
+
+## Amended 2026-11-09
+
+The prototype for the first TypeScript stack ran on Vite+ 1.5.1 and changed three details above. `docs/research/backend-ts-prototype.md` has the evidence.
+
+- The pins live in the `catalog` block of `pnpm-workspace.yaml`, because that's where `vp migrate` now writes them. Each `package.json` says `"vite-plus": "catalog:"`, and the `vite` override is `vite@*: "catalog:"`. Renovate bumps the `vite-plus` catalog entry, and `mise run upgrade-vite-plus` re-pins the alias. The pin check compares the catalog with `vp toolchain --json`.
+- There's no `vitest` override while no package depends on `vitest` or `@vitest/*` directly, because `vite-plus` already depends on one exact Vitest. The override and its check return when a package adds such a dependency.
+- The `test` task runs `vp test run`. Plain `vp test` watches for changes when it runs in a terminal.
+
