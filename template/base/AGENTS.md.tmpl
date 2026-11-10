@@ -1,7 +1,7 @@
 # Working in this project
 
-Use the mise tasks when you work in this project. Never call a tool directly when a mise task exists for it. Check your work with `mise run check` before you commit.
-[[ if eq .backend "ts" -]]
+Use the mise tasks in `mise.toml` when you work in this project. Never call a tool directly when a mise task exists for it. Check your work with `mise run check` before you commit.
+[[- if eq .backend "ts" ]]
 
 ## TypeScript
 
@@ -14,4 +14,4 @@ Vite+ is the toolchain. Its CLI is `vp`, and it installs Node and pnpm.
 - Import test functions from `vite-plus/test`.
 - Relative imports end in `.ts`, because Node runs the source files directly in development.
 - After changing a route, run `mise run openapi` and commit `openapi.json`.
-[[ end -]]
+[[- end ]]

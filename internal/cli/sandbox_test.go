@@ -29,6 +29,9 @@ type sandbox struct {
 	// prompter answers questions as the author would at a terminal. When it's
 	// nil, stdin isn't a terminal.
 	prompter *scriptedPrompter
+	// realMachine makes runs inherit the real environment, so the real tools
+	// and their caches work. Only health tests set it.
+	realMachine bool
 }
 
 // result is what one sow run produced.
@@ -77,16 +80,35 @@ func (s *sandbox) mustRun(args ...string) result {
 }
 
 func (s *sandbox) environ() []string {
-	return append([]string{
-		"PATH=" + os.Getenv("PATH"),
+	base := []string{
+		"PATH=" + filepath.Join(s.home, "bin") + string(os.PathListSeparator) + os.Getenv("PATH"),
 		"HOME=" + s.home,
-		"GIT_CONFIG_GLOBAL=" + filepath.Join(s.home, "gitconfig"),
+	}
+	if s.realMachine {
+		// mise refuses to read a mise.toml it wasn't told to trust.
+		base = append(os.Environ(), "MISE_TRUSTED_CONFIG_PATHS="+s.dir)
+	}
+	return append(append(base,
+		"GIT_CONFIG_GLOBAL="+filepath.Join(s.home, "gitconfig"),
 		"GIT_CONFIG_NOSYSTEM=1",
 		"GIT_AUTHOR_NAME=Test User",
 		"GIT_AUTHOR_EMAIL=test@example.com",
 		"GIT_COMMITTER_NAME=Test User",
 		"GIT_COMMITTER_EMAIL=test@example.com",
-	}, s.extraEnv...)
+	), s.extraEnv...)
+}
+
+// fakeTool puts an executable shell script called name first on the sandbox's
+// PATH, so sow starts it in place of the real tool.
+func (s *sandbox) fakeTool(name, script string) {
+	s.t.Helper()
+	target := filepath.Join(s.home, "bin", name)
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		s.t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("#!/bin/sh\n"+script+"\n"), 0o755); err != nil {
+		s.t.Fatal(err)
+	}
 }
 
 // terminal makes stdin a terminal where the author types the typed answers,

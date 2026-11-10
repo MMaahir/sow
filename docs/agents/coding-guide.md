@@ -36,6 +36,10 @@ Every answer is a string. A component answer has `Component: true`, and its valu
 1. Add the stack's name to that question's `Choices`.
 2. Create `template/<component>-<stack>/`, such as `template/backend-ts/`. `Answers.Dirs()` selects it by that name. Don't add a lookup table.
 3. Put the stack's files inside it at the paths they should have in the project. `template/backend-ts/backend/package.json` becomes `backend/package.json`.
+4. Give the stack a `mise.toml` in its own directory with the `dev`, `test`, `lint` and `build` tasks (ADR 0004), as `template/backend-ts/backend/mise.toml` does.
+5. Shared files in `template/base/` that must know about the stack are `.tmpl` files that branch on the answer: the root `mise.toml`, `.pre-commit-config.yaml` and `AGENTS.md`. Add a branch there. Don't put a second copy of a shared file in the stack's directory.
+6. Add fast tests with a fake tool (see "Start an external command"), like `internal/cli/backend_ts_test.go`, and health tests like `TestNewBackendTSProjectHealth`.
+7. Prove the stack in a throwaway project outside the repo first, and record the versions and surprises in `docs/research/`, as `docs/research/backend-ts-prototype.md` does.
 
 ### Add a preset
 
@@ -64,7 +68,7 @@ Add one entry to `presets` in `internal/answers/presets.go`, and tests like `Tes
 
 Use `run` in `internal/project/new.go`. It finds the executable on the `PATH` of the environment it was given, sets the directory and environment, and returns an error that names the command, the directory and the output. Never call `exec.Command` or `exec.LookPath` anywhere else in non-test code, because they read the real process's `PATH`. Pass `opts.Environ` through, and never use `os.Environ()`.
 
-To test a command sow starts, put a fake executable in a sandbox directory and put that directory first in the sandbox's `PATH`.
+To test a command sow starts, call `s.fakeTool("vp", script)` in the sandbox. It puts a shell script with that name first on the sandbox's `PATH`.
 
 ## 3. Go rules
 
@@ -132,15 +136,23 @@ func TestNewRefusesAnExistingDirectory(t *testing.T) {
 7. **Several cases of one behaviour go in a map and `t.Run`**, as in `TestNewRejectsAnInvalidProjectName`. Each case gets a new sandbox.
 8. **Helpers call `t.Helper()`** and belong in `sandbox_test.go`. Add a method to the sandbox before you repeat setup code in three tests.
 9. **Tests never read the real machine**: no real home directory, no real git config, no network. The sandbox sets `HOME` and the git variables. A test that needs another variable sets `s.extraEnv`.
-10. **Slow tests have `Health` in their name and start with**
+10. **Slow tests have `Health` in their name, live in `internal/cli/health_test.go`, and start with `newHealthSandbox`.**
 
     ```go
-    if testing.Short() {
-    	t.Skip("generated project health tests are slow: run mise run test-health")
+    func TestNewBackendTSProjectHealth(t *testing.T) {
+    	s := newHealthSandbox(t, "mise", "pre-commit", "vp", "node")
+    	s.newProject("--backend", "ts")
+
+    	t.Run("lint, test and build pass in the backend", func(t *testing.T) {
+    		s := s.in(t)
+    		for _, task := range []string{"lint", "test", "build"} {
+    			s.mustTool("backend", "mise", "run", task)
+    		}
+    	})
     }
     ```
 
-    They run the generated project's own lint, tests and builds.
+    They run the generated project's own tasks with the real tools. `newHealthSandbox` skips the test in short mode and when a tool it names isn't installed, and it's the one sandbox that inherits the real machine's environment. Create the project once per stack and put each check in a `t.Run`, because installing dependencies is slow. Every subtest starts with `s := s.in(t)`, so a failure is reported to the subtest. A subtest that changes the project undoes the change in `t.Cleanup`. Run project tasks through `mise run`, as the author would.
 11. **A health check that needs a file the author hasn't written yet skips itself** with a message naming the file: `t.Skip("backend/Dockerfile doesn't exist yet: the author writes it")`. Check for the file in the rendered project, not in `template/`.
 
 ### Red, then green
@@ -161,17 +173,18 @@ ADR 0012 defines the template format. It's a compatibility contract, because `so
 1. **Add `.tmpl` only when the file needs an answer.** Plain files are safer and other tools can parse them. Keep `package.json`, `pnpm-workspace.yaml` and lockfiles plain, so Renovate can read them.
 2. **Delimiters are `[[` and `]]`.** `{{ }}` passes through untouched.
 3. **Templates only substitute answers and branch on them**: `[[ .project_name ]]` and `[[ if eq .backend "ts" ]]...[[ end ]]`. No loops, no variables, no nested templates, no custom functions. If you need more, the file is doing too much. Stop and comment on the ticket.
-4. **Put `[[ if ... -]]` and `[[ end -]]` on their own lines, with the dash on the right only.** `-]]` removes the whitespace after the action, which is that line's newline, so a skipped branch leaves no blank line. Never write `[[-`, because it also removes the newline before the action and joins two lines together. Check the rendered output in a test, as `TestRenderABranchOnItsOwnLinesLeavesNoBlankLines` does.
+4. **Put `[[- if ... ]]` and `[[- end ]]` on their own lines, with the dash on the left only.** `[[-` removes the whitespace before the action, which is the previous line's newline, so a skipped branch leaves no blank line and the lines inside the branch keep their indentation. Never write `-]]`, because it also removes the indentation of the next line. Check the rendered output in a test, as `TestRenderABranchOnItsOwnLinesLeavesNoBlankLines` does.
 
    ```
-   before
-   [[ if eq .backend "ts" -]]
-   middle
-   [[ end -]]
+   before:
+   [[- if eq .backend "ts" ]]
+     middle
+   [[- end ]]
    after
    ```
 
-   This renders `before`, `middle`, `after` on three lines when the backend is `ts`, and `before`, `after` on two lines otherwise.
+   This renders `before:`, `  middle`, `after` on three lines when the backend is `ts`, and `before:`, `after` on two lines otherwise. `[[-` removes every blank line before it too, so a blank line that belongs to the branch goes inside it, as the first line after the `if`. Don't start a file with a branch.
+
 5. **A path belongs to one directory.** If two directories that can be selected together contain the same path, rendering fails. A file that depends on several answers lives in `template/base/` as a `.tmpl`.
 6. **Never add a file named `go.mod` under `template/`.** Go's embed skips any directory that contains one. Name it `go.mod.tmpl`.
 7. **Files aren't executable.** The embedded file system drops the executable bit. Call scripts through their interpreter, such as `sh scripts/foo.sh`.
