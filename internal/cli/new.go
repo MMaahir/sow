@@ -2,6 +2,8 @@ package cli
 
 import (
 	"errors"
+	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -52,9 +54,12 @@ func newCommand(env Env) *cobra.Command {
 		personal, err := answers.ReadPersonalDefaults(personalDefaultsPath(env))
 		problems = append(problems, err)
 		sources = append(sources, personal)
-		// Nothing is asked when a source is already wrong: the author fixes
-		// the preset or the personal defaults file first.
-		if !noInput && errors.Join(problems...) == nil {
+		// Nothing is asked when a source is already wrong, when an answer
+		// that was given is invalid, or when the target directory exists:
+		// the author fixes the cause first. project.New repeats the
+		// directory check and reports it.
+		if !noInput && errors.Join(problems...) == nil &&
+			answers.CheckGiven(sources...) == nil && !targetExists(env.Dir, args[0]) {
 			typed, err := ask(cmd.Context(), env.Prompter, sources)
 			if err != nil {
 				return err
@@ -81,6 +86,14 @@ func newCommand(env Env) *cobra.Command {
 // flagName turns an answer key such as "user_name" into its flag, "user-name".
 func flagName(key string) string {
 	return strings.ReplaceAll(key, "_", "-")
+}
+
+// targetExists reports whether the project directory is already on disk, so
+// sow doesn't ask questions for a project it can't create. It checks the same
+// way project.New does.
+func targetExists(dir, name string) bool {
+	_, err := os.Lstat(filepath.Join(dir, name))
+	return !errors.Is(err, fs.ErrNotExist)
 }
 
 // personalDefaultsPath returns $XDG_CONFIG_HOME/sow/config.yml, or

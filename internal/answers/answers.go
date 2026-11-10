@@ -5,6 +5,7 @@ package answers
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"regexp"
 	"slices"
 	"strings"
@@ -76,6 +77,42 @@ func checkProjectName(value string) error {
 	return nil
 }
 
+// CheckGiven reports every problem with the answers the sources give: an
+// unknown key, a value its question doesn't allow, and a value that fails the
+// question's own check. A question no source answers isn't a problem, because
+// sow asks for it or falls back to its default. Neither is an empty value,
+// which Resolve reports as a missing answer. The returned error lists every
+// problem, or is nil.
+//
+// sow checks the answers it was given before it asks questions, so it never
+// asks about a project it can't create.
+func CheckGiven(sources ...Answers) error {
+	questions := Questions()
+	var problems []error
+	for _, source := range sources {
+		for _, key := range slices.Sorted(maps.Keys(source)) {
+			i := slices.IndexFunc(questions, func(q Question) bool { return q.Key == key })
+			if i < 0 {
+				problems = append(problems, fmt.Errorf("%s is not an answer sow knows", key))
+				continue
+			}
+			q := questions[i]
+			value := source[key]
+			if value == "" {
+				continue
+			}
+			switch {
+			case len(q.Choices) > 0 && !slices.Contains(q.Choices, value):
+				problems = append(problems, fmt.Errorf(
+					"%s can't be %q: choose one of %s", q.Key, value, strings.Join(q.Choices, ", ")))
+			case q.check != nil && q.check(value) != nil:
+				problems = append(problems, fmt.Errorf("%s can't be %q: %w", q.Key, value, q.check(value)))
+			}
+		}
+	}
+	return errors.Join(problems...)
+}
+
 // Resolve merges sources into one complete set of answers. Sources are listed
 // from the highest priority to the lowest, and the first one that has a key
 // wins. A question no source answers takes its default.
@@ -87,12 +124,8 @@ func Resolve(sources ...Answers) (Answers, error) {
 	resolved := Answers{}
 	var problems []error
 
-	for _, source := range sources {
-		for key := range source {
-			if !slices.ContainsFunc(questions, func(q Question) bool { return q.Key == key }) {
-				problems = append(problems, fmt.Errorf("%s is not an answer sow knows", key))
-			}
-		}
+	if err := CheckGiven(sources...); err != nil {
+		problems = append(problems, err)
 	}
 
 	for _, q := range questions {
@@ -111,11 +144,6 @@ func Resolve(sources ...Answers) (Answers, error) {
 		case value == "":
 			problems = append(problems, fmt.Errorf(
 				"%s is missing: pass --%s", q.Key, strings.ReplaceAll(q.Key, "_", "-")))
-		case len(q.Choices) > 0 && !slices.Contains(q.Choices, value):
-			problems = append(problems, fmt.Errorf(
-				"%s can't be %q: choose one of %s", q.Key, value, strings.Join(q.Choices, ", ")))
-		case q.check != nil && q.check(value) != nil:
-			problems = append(problems, fmt.Errorf("%s can't be %q: %w", q.Key, value, q.check(value)))
 		}
 		resolved[q.Key] = value
 	}
