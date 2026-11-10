@@ -360,6 +360,29 @@ export function Wrong({ on }: { on: boolean }) {
 	})
 }
 
+func TestNewWebTSProjectHealth(t *testing.T) {
+	s := newHealthSandbox(t, "mise", "vp", "node")
+	s.newProject("--preset", "web-ts")
+	s.mustTool(".", "mise", "install")
+
+	t.Run("the root check task passes", func(t *testing.T) {
+		s := s.in(t)
+		s.mustTool(".", "mise", "run", "check")
+	})
+
+	t.Run("the Vite+ pin check passes", func(t *testing.T) {
+		s := s.in(t)
+		s.mustTool(".", "mise", "run", "check-vite-plus-pins")
+	})
+
+	t.Run("the working tree is clean after every task", func(t *testing.T) {
+		s := s.in(t)
+		if changed := s.git("status", "--porcelain"); changed != "" {
+			t.Errorf("the tasks left uncommitted files:\n%s", changed)
+		}
+	})
+}
+
 // freePort returns a TCP port nothing is listening on.
 func freePort(t *testing.T) int {
 	t.Helper()

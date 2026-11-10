@@ -387,6 +387,35 @@ func TestNewMinimalPresetTurnsNoComponentsOn(t *testing.T) {
 	}
 }
 
+func TestNewWebTSPresetRendersBackendAndFrontend(t *testing.T) {
+	s := newSandbox(t)
+	s.fakeTool("vp", fakeVP)
+
+	s.mustRun("new", "demo", "--no-input", "--preset", "web-ts")
+
+	wantContains(t, s.read("demo/.sow-answers.yml"), "backend: ts\n", "frontend: react\n")
+	for _, name := range []string{"backend", "frontend"} {
+		if !s.exists("demo/" + name) {
+			t.Errorf("the web-ts preset rendered no %s directory", name)
+		}
+	}
+}
+
+func TestNewFrontendFlagOverridesTheWebTSPreset(t *testing.T) {
+	s := newSandbox(t)
+	s.fakeTool("vp", fakeVP)
+
+	s.mustRun("new", "demo", "--no-input", "--preset", "web-ts", "--frontend", "none")
+
+	wantContains(t, s.read("demo/.sow-answers.yml"), "backend: ts\n", "frontend: none\n")
+	if s.exists("demo/frontend") {
+		t.Error("--frontend none rendered a frontend directory anyway")
+	}
+	if !s.exists("demo/backend") {
+		t.Error("--frontend none removed the backend directory from the preset")
+	}
+}
+
 func TestNewRejectsAnUnknownFrontendAndListsTheChoices(t *testing.T) {
 	s := newSandbox(t)
 
@@ -432,7 +461,7 @@ func TestNewRejectsAnUnknownPresetAndListsThePresets(t *testing.T) {
 	if got.code != 1 {
 		t.Errorf("exit code = %d, want 1", got.code)
 	}
-	wantContains(t, got.stderr, "everything", "minimal")
+	wantContains(t, got.stderr, "everything", "minimal", "web-ts")
 	if s.exists("demo") {
 		t.Error("sow new created demo despite the unknown preset")
 	}
