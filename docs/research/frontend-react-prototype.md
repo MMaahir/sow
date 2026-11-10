@@ -111,3 +111,15 @@ Ticket #60 put the client in the template, generated with `orval` 8.47.0. A fres
 - The config sets `override.fetch.forceSuccessResponse: true`. Without it, the fetch function returns a response that isn't 2xx as data, and TanStack Query reports `status: "success"` for a 503. With it, the function throws, and the starter route's test checks that a 503 puts the query in the error state. The response body is still at `data.data`.
 - `pnpm-workspace.yaml` sets `allowBuilds: esbuild: false`. pnpm writes the entry after the other keys, so the template keeps it last, where a later install leaves the file unchanged. A project without a frontend installs no esbuild, and the entry changes nothing there.
 - `orval.config.ts` is in the frontend's `tsconfig.json`, so `vp check` type-checks it.
+
+## The Playwright smoke tests
+
+Ticket #64 added Playwright smoke tests, proven with `@playwright/test` 1.65.0 and its headless Chromium build 1254 (Chrome for Testing 158.0.8127.18). The tests passed against the backend's `dev` task and `vp dev`, which sends `/api` to the backend and serves the app for any other path, as the author's nginx config will.
+
+- Playwright lives in `frontend/`, as a devDependency of the frontend package. Its tests drive the frontend's pages, the frontend's `vp check` formats, lints and type-checks them through `frontend/tsconfig.json`, and the workspace gains no package and no lint task. Vitest only runs `src/**/*.test.{ts,tsx}`, so it never picks up the Playwright files in `frontend/e2e/`.
+- The root mise task `e2e` runs `pnpm exec playwright test` in `frontend/`. `playwright.config.ts` reads the address from `E2E_BASE_URL`, runs Chromium only, and starts no server. It stops with a message when the variable isn't set.
+- `e2e/global-setup.ts` fetches the address before any browser starts. When nothing answers, the run fails in under a second with `nothing answers at <address>`, and that works on a machine with no browser installed.
+- mise's `[env]` overrides the shell, so with `E2E_BASE_URL` in `.env`, `E2E_BASE_URL=... mise run e2e` still uses the value in `.env`. To test another address locally, edit `.env`. CI has no `.env`, so a variable the CI job sets reaches the task.
+- Installing `@playwright/test` downloads no browser and runs no install script, so `pnpm-workspace.yaml` needs no `allowBuilds` entry. Browsers live in Playwright's cache, `~/Library/Caches/ms-playwright` on macOS and `~/.cache/ms-playwright` on Linux, one directory per build. `pnpm exec playwright install --only-shell chromium` in `frontend/` installs the headless shell the tests use, about 200 MB unpacked on macOS. `playwright install` removes browser builds it considers unused unless it gets `--no-remove`. The CI job installs the browser, which is the author's.
+- Each run writes `frontend/test-results/`, even when every test passes, so the generated `.gitignore` lists it.
+- TanStack Router's default not-found view is a bare `Not Found` paragraph. The root route now has a `notFoundComponent` with the heading `Page not found`, so the smoke test can tell the app's view from nginx's error page.

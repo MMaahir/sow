@@ -127,3 +127,56 @@ func TestNewBackendTSSharedFilesLeaveTheFrontendOut(t *testing.T) {
 		t.Error("--backend ts rendered frontend/")
 	}
 }
+
+func TestNewFrontendReactGivesTheRootE2ETask(t *testing.T) {
+	s := newSandbox(t)
+	s.fakeTool("vp", fakeVP)
+
+	s.mustRun("new", "demo", "--no-input", "--backend", "ts", "--frontend", "react")
+
+	wantContains(t, s.read("demo/mise.toml"), `
+[tasks.e2e]
+description = "Run the Playwright smoke tests against the app running at E2E_BASE_URL"
+dir = "{{config_root}}/frontend"
+run = "pnpm exec playwright test"
+`)
+	for _, name := range []string{"frontend/playwright.config.ts", "frontend/e2e/global-setup.ts", "frontend/e2e/smoke.spec.ts"} {
+		if !s.exists("demo/" + name) {
+			t.Errorf("%s is missing", name)
+		}
+	}
+	wantContains(t, s.read("demo/.gitignore"), "test-results/\n")
+	wantContains(t, s.read("demo/AGENTS.md"),
+		"- The Playwright smoke tests in `frontend/e2e/` run against the running app. Start it, then run `mise run e2e` from the root.")
+}
+
+func TestNewFrontendReactSetsTheE2EBaseURL(t *testing.T) {
+	s := newSandbox(t)
+	s.fakeTool("vp", fakeVP)
+
+	s.mustRun("new", "demo", "--no-input", "--backend", "ts", "--frontend", "react")
+
+	want := `# Local settings and secrets for this project. Copy it to .env and fill it in. mise loads .env.
+
+# The address of the running app, where mise run e2e runs the Playwright smoke tests.
+E2E_BASE_URL=http://localhost:8080
+`
+	if got := s.read("demo/.env.example"); got != want {
+		t.Errorf(".env.example =\n%s\nwant\n%s", got, want)
+	}
+}
+
+func TestNewBackendTSHasNoE2ETask(t *testing.T) {
+	s := newSandbox(t)
+	s.fakeTool("vp", fakeVP)
+
+	s.mustRun("new", "demo", "--no-input", "--backend", "ts")
+
+	if got := s.read("demo/mise.toml"); strings.Contains(got, "[tasks.e2e]") {
+		t.Errorf("mise.toml has the e2e task in a project with no frontend:\n%s", got)
+	}
+	want := "# Local settings and secrets for this project. Copy it to .env and fill it in. mise loads .env.\n"
+	if got := s.read("demo/.env.example"); got != want {
+		t.Errorf(".env.example = %q, want %q", got, want)
+	}
+}

@@ -1,6 +1,7 @@
 package cli_test
 
 import (
+	"context"
 	"fmt"
 	"maps"
 	"net"
@@ -302,7 +303,59 @@ func TestNewFrontendReactProjectHealth(t *testing.T) {
 
 		output := s.mustTool("frontend", "mise", "run", "test", "--reporter=verbose")
 
-		wantContains(t, output, "the starter route shows the status from GET /api/healthz")
+		wantContains(t, output,
+			"the starter route shows the status from GET /api/healthz",
+			"a route that doesn't exist shows the not-found view")
+	})
+
+	t.Run("e2e fails within a minute and names the address when nothing listens there", func(t *testing.T) {
+		s := s.in(t)
+		address := fmt.Sprintf("http://127.0.0.1:%d", freePort(t))
+		s.edit("demo/.env", func(content string) string {
+			return strings.Replace(content, "E2E_BASE_URL=http://localhost:8080", "E2E_BASE_URL="+address, 1)
+		})
+		start := time.Now()
+
+		output, err := s.tool(".", "mise", "run", "e2e")
+
+		if err == nil {
+			t.Fatalf("mise run e2e passed with nothing listening at %s:\n%s", address, output)
+		}
+		if elapsed := time.Since(start); elapsed > time.Minute {
+			t.Errorf("mise run e2e took %s to fail, want under a minute", elapsed)
+		}
+		wantContains(t, output, "nothing answers at "+address)
+	})
+
+	t.Run("the smoke tests pass against the Compose stack", func(t *testing.T) {
+		s := s.in(t)
+		if !s.exists("demo/compose.yaml") {
+			t.Skip("compose.yaml doesn't exist yet: the author writes it")
+		}
+		if _, err := exec.LookPath("docker"); err != nil {
+			t.Skip("docker isn't installed: install it to run this test")
+		}
+		if !s.chromiumInstalled() {
+			t.Skip("Playwright's Chromium isn't installed: run pnpm exec playwright install --only-shell chromium in frontend/")
+		}
+		s.composeUp()
+
+		output := s.mustTool(".", "mise", "run", "e2e")
+
+		wantContains(t, output, "2 passed")
+
+		t.Run("the home page smoke test fails with the backend stopped", func(t *testing.T) {
+			s := s.in(t)
+			s.mustTool(".", "docker", "compose", "stop", "backend")
+
+			output, err := s.tool(".", "mise", "run", "e2e")
+
+			if err == nil {
+				t.Fatalf("mise run e2e passed with the backend stopped:\n%s", output)
+			}
+			_, failures, _ := strings.Cut(output, "1 failed")
+			wantContains(t, failures, "the home page shows the backend's health status")
+		})
 	})
 
 	t.Run("generate-client leaves a fresh project unchanged", func(t *testing.T) {
@@ -619,4 +672,39 @@ func statusOf(t *testing.T, url string) int {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
+}
+
+// installLocation matches where Playwright installs its headless Chromium in
+// the output of playwright install --dry-run.
+var installLocation = regexp.MustCompile(`(?m)chromium-headless-shell.*\n\s*Install location:\s*(.+)$`)
+
+// chromiumInstalled reports whether the headless Chromium that the demo
+// project's Playwright runs is on this machine. Playwright prints where the
+// browser belongs without downloading it.
+func (s *sandbox) chromiumInstalled() bool {
+	s.t.Helper()
+	output := s.mustTool("frontend", "pnpm", "exec", "playwright", "install", "--dry-run", "--only-shell", "chromium")
+	match := installLocation.FindStringSubmatch(output)
+	if match == nil {
+		s.t.Fatalf("playwright install --dry-run printed no install location for chromium-headless-shell:\n%s", output)
+	}
+	_, err := os.Stat(strings.TrimSpace(match[1]))
+	return err == nil
+}
+
+// composeUp builds and starts the demo project's Compose stack, and waits
+// until its services are healthy. It stops the stack when the test ends, even
+// when the test or the start fails.
+func (s *sandbox) composeUp() {
+	s.t.Helper()
+	s.t.Cleanup(func() {
+		// The test's context is cancelled before cleanup runs, so down needs one that isn't.
+		down := exec.CommandContext(context.WithoutCancel(s.t.Context()), "docker", "compose", "down")
+		down.Dir = filepath.Join(s.dir, "demo")
+		down.Env = s.environ()
+		if output, err := down.CombinedOutput(); err != nil {
+			s.t.Errorf("docker compose down: %v\n%s", err, output)
+		}
+	})
+	s.mustTool(".", "docker", "compose", "up", "--build", "--wait")
 }

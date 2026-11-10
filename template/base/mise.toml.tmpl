@@ -31,3 +31,10 @@ run = "node scripts/check-vite-plus-pins.ts"
 description = "Re-pin the vite alias and Vitest to the installed vite-plus"
 run = "pnpm exec vp migrate --no-interactive"
 [[- end ]]
+[[- if ne .frontend "none" ]]
+
+[tasks.e2e]
+description = "Run the Playwright smoke tests against the app running at E2E_BASE_URL"
+dir = "{{config_root}}/frontend"
+run = "pnpm exec playwright test"
+[[- end ]]
