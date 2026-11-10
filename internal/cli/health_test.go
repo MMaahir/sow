@@ -2,15 +2,19 @@ package cli_test
 
 import (
 	"fmt"
+	"maps"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/MMaahir/sow/internal/answers"
 )
 
 // newHealthSandbox returns a sandbox for a generated project health test. Its
@@ -424,6 +428,128 @@ func TestNewWebTSProjectHealth(t *testing.T) {
 			t.Errorf("the tasks left uncommitted files:\n%s", changed)
 		}
 	})
+}
+
+func TestNewEveryCombinationProjectHealth(t *testing.T) {
+	if os.Getenv("SOW_TEST_ALL_COMBINATIONS") != "1" {
+		t.Skip("every combination of answers is slow to test: set SOW_TEST_ALL_COMBINATIONS=1 to run it")
+	}
+
+	for _, combination := range everyCombination() {
+		t.Run(combination.name, func(t *testing.T) {
+			tools := []string{"mise"}
+			if combination.answers.TypeScriptOn() {
+				tools = append(tools, "vp", "node")
+			}
+			s := newHealthSandbox(t, tools...)
+			s.newProject(combination.flags...)
+			s.mustTool(".", "mise", "install")
+
+			t.Run("the root check task passes", func(t *testing.T) {
+				s := s.in(t)
+				s.mustTool(".", "mise", "run", "check")
+			})
+
+			for _, component := range combination.on {
+				t.Run("lint, test and build pass in the "+component, func(t *testing.T) {
+					s := s.in(t)
+					for _, task := range []string{"lint", "test", "build"} {
+						s.mustTool(component, "mise", "run", task)
+					}
+				})
+			}
+
+			if combination.answers.TypeScriptOn() {
+				t.Run("the Vite+ pin check passes", func(t *testing.T) {
+					s := s.in(t)
+					s.mustTool(".", "mise", "run", "check-vite-plus-pins")
+				})
+			}
+
+			t.Run("the working tree is clean after every task", func(t *testing.T) {
+				s := s.in(t)
+				if changed := s.git("status", "--porcelain"); changed != "" {
+					t.Errorf("the tasks left uncommitted files:\n%s", changed)
+				}
+			})
+		})
+	}
+}
+
+func TestEveryCombinationListsEachCombinationValidationAccepts(t *testing.T) {
+	var got []string
+
+	for _, combination := range everyCombination() {
+		got = append(got, combination.name)
+	}
+
+	want := []string{
+		"backend=none,frontend=none",
+		"backend=ts,frontend=none",
+		"backend=ts,frontend=react",
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("combinations = %q, want %q", got, want)
+	}
+}
+
+// combination is one set of component answers for a generated project.
+type combination struct {
+	// name lists each answer as key=value, such as
+	// "backend=ts,frontend=react". It names the subtest.
+	name string
+	// answers holds the component answers.
+	answers answers.Answers
+	// flags passes the answers to sow new, such as "--backend", "ts".
+	flags []string
+	// on lists the components that are on. Each one renders into a
+	// directory of the same name.
+	on []string
+}
+
+// everyCombination returns every combination of component answers that
+// validation accepts, in the order of the questions and their choices. It
+// reads the questions, so a new component or stack joins the list with no
+// change here, and a combination a question's Needs rejects is left out.
+func everyCombination() []combination {
+	all := []answers.Answers{{}}
+	for _, q := range answers.Questions() {
+		if !q.Component {
+			continue
+		}
+		var next []answers.Answers
+		for _, partial := range all {
+			for _, choice := range q.Choices {
+				extended := maps.Clone(partial)
+				extended[q.Key] = choice
+				next = append(next, extended)
+			}
+		}
+		all = next
+	}
+
+	var combinations []combination
+	for _, a := range all {
+		if answers.CheckGiven(a) != nil {
+			continue
+		}
+		c := combination{answers: a}
+		var names []string
+		for _, q := range answers.Questions() {
+			value, ok := a[q.Key]
+			if !ok {
+				continue
+			}
+			names = append(names, q.Key+"="+value)
+			c.flags = append(c.flags, "--"+strings.ReplaceAll(q.Key, "_", "-"), value)
+			if value != answers.None {
+				c.on = append(c.on, q.Key)
+			}
+		}
+		c.name = strings.Join(names, ",")
+		combinations = append(combinations, c)
+	}
+	return combinations
 }
 
 // freePort returns a TCP port nothing is listening on.
