@@ -2,6 +2,7 @@ package sow_test
 
 import (
 	"io/fs"
+	"os"
 	"path"
 	"slices"
 	"strings"
@@ -10,11 +11,13 @@ import (
 	"github.com/MMaahir/sow"
 )
 
-// templatePaths returns the path of every file in the embedded template.
+// templatePaths returns the path of every file under template/ in the source
+// tree. It reads the directory on disk, not the embedded copy, because Go's
+// embed silently leaves some files out, such as a directory with a go.mod.
 func templatePaths(t *testing.T) []string {
 	t.Helper()
 	var paths []string
-	err := fs.WalkDir(sow.Template(), ".", func(name string, entry fs.DirEntry, err error) error {
+	err := fs.WalkDir(os.DirFS("template"), ".", func(name string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -27,6 +30,14 @@ func templatePaths(t *testing.T) []string {
 		t.Fatal(err)
 	}
 	return paths
+}
+
+func TestEmbeddedTemplateHasEverySourceFile(t *testing.T) {
+	for _, name := range templatePaths(t) {
+		if _, err := fs.Stat(sow.Template(), name); err != nil {
+			t.Errorf("%s is in template/ but not in the binary: %v", name, err)
+		}
+	}
 }
 
 func TestTemplateHasNoDotEnv(t *testing.T) {

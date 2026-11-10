@@ -21,6 +21,7 @@ type Manifest = {
   dependencies?: Versions;
   devDependencies?: Versions;
   optionalDependencies?: Versions;
+  peerDependencies?: Versions;
 };
 
 type Toolchain = {
@@ -75,6 +76,17 @@ if (
   );
 }
 
+// The catalog entry alone changes nothing for other packages' Vite. The
+// vite@* override is what sends every Vite dependency to the Vite+ core.
+const viteOverride = overrides["vite@*"];
+if (viteOverride === undefined) {
+  problems.push(`vite: no vite@* override sends Vite to @voidzero-dev/vite-plus-core ${core}`);
+} else if (resolve("vite", viteOverride) !== `npm:@voidzero-dev/vite-plus-core@${core}`) {
+  problems.push(
+    `vite: the vite@* override is ${resolve("vite", viteOverride)}, but it must be npm:@voidzero-dev/vite-plus-core@${core}`,
+  );
+}
+
 const manifests = globSync(
   (workspace.packages ?? [])
     .filter((pattern) => !pattern.startsWith("!"))
@@ -103,6 +115,13 @@ for (const file of ["package.json", ...manifests]) {
     const version = resolve(name, spec);
     if (version !== vitest) {
       problems.push(`${name}: ${file} pins ${version}, but vp toolchain reports Vitest ${vitest}`);
+    }
+  }
+  // A peer dependency is a range by design, so its version isn't compared. It
+  // still makes pnpm install Vitest for this package, so it needs the override.
+  for (const name of Object.keys(manifest.peerDependencies ?? {})) {
+    if (name === "vitest" || name.startsWith("@vitest/")) {
+      vitestUser ??= file;
     }
   }
 }

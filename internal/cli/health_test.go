@@ -154,6 +154,43 @@ func TestNewBackendTSProjectHealth(t *testing.T) {
 			"mise run upgrade-vite-plus")
 	})
 
+	for name, override := range map[string]string{
+		"a missing vite override fails the pin check":       "",
+		"a vite override to plain Vite fails the pin check": "  vite@*: npm:vite@8.3.7\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			s := s.in(t)
+			s.edit("demo/pnpm-workspace.yaml", func(content string) string {
+				return strings.Replace(content, "  vite@*: \"catalog:\"\n", override, 1)
+			})
+
+			output, err := s.tool(".", "mise", "run", "check-vite-plus-pins")
+
+			if err == nil {
+				t.Fatalf("the pin check passed with the vite override changed:\n%s", output)
+			}
+			wantContains(t, output, "vite@* override", "mise run upgrade-vite-plus")
+		})
+	}
+
+	t.Run("a vitest peer dependency with no override fails the pin check", func(t *testing.T) {
+		s := s.in(t)
+		s.edit("demo/backend/package.json", func(content string) string {
+			return strings.Replace(content, `"devDependencies": {`, `"peerDependencies": {
+    "@vitest/coverage-v8": ">=5"
+  },
+  "devDependencies": {`, 1)
+		})
+
+		output, err := s.tool(".", "mise", "run", "check-vite-plus-pins")
+
+		if err == nil {
+			t.Fatalf("the pin check passed with a Vitest peer dependency and no override:\n%s", output)
+		}
+		wantContains(t, output,
+			"vitest: backend/package.json depends on Vitest directly, but no vitest@* override pins Vitest")
+	})
+
 	t.Run("a direct vitest dependency with no override fails the pin check", func(t *testing.T) {
 		s := s.in(t)
 		s.edit("demo/backend/package.json", func(content string) string {

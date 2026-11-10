@@ -84,9 +84,9 @@ func checkProjectName(value string) error {
 
 // CheckGiven reports every problem with the answers the sources give: an
 // unknown key, a value its question doesn't allow, and a value that fails the
-// question's own check. A question no source answers isn't a problem, because
-// sow asks for it or falls back to its default. Neither is an empty value,
-// which Resolve reports as a missing answer. The returned error lists every
+// question's own check. An empty value is a problem too, because the
+// source answered the question and sow won't ask it again. A question no
+// source answers isn't a problem: sow asks for it or falls back to its default. The returned error lists every
 // problem, or is nil.
 //
 // sow checks the answers it was given before it asks questions, so it never
@@ -103,10 +103,9 @@ func CheckGiven(sources ...Answers) error {
 			}
 			q := questions[i]
 			value := source[key]
-			if value == "" {
-				continue
-			}
 			switch {
+			case value == "":
+				problems = append(problems, fmt.Errorf("%s can't be empty", q.Key))
 			case len(q.Choices) > 0 && !slices.Contains(q.Choices, value):
 				problems = append(problems, fmt.Errorf(
 					"%s can't be %q: choose one of %s", q.Key, value, strings.Join(q.Choices, ", ")))
@@ -135,13 +134,17 @@ func Resolve(sources ...Answers) (Answers, error) {
 
 	for _, q := range questions {
 		value := q.Default
+		answered := false
 		for _, source := range sources {
 			if given, ok := source[q.Key]; ok {
 				value = given
+				answered = true
 				break
 			}
 		}
+		// An empty answer from a source is CheckGiven's problem to report.
 		switch {
+		case answered:
 		case value == "" && q.Personal:
 			problems = append(problems, fmt.Errorf(
 				"%s is missing: pass --%s or set %s in the personal defaults file",

@@ -94,6 +94,24 @@ func TestNewRejectsAnInvalidTypedAnswer(t *testing.T) {
 	}
 }
 
+func TestNewRejectsAnEmptyGivenAnswerBeforeAsking(t *testing.T) {
+	s := newSandbox(t)
+	prompter := s.terminal(map[string]string{"backend": "none"})
+
+	got := s.run("new", "demo", "--user-name", "")
+
+	if got.code != 1 {
+		t.Errorf("exit code = %d, want 1", got.code)
+	}
+	wantContains(t, got.stderr, "user_name can't be empty")
+	if asked := prompter.askedKeys(); len(asked) != 0 {
+		t.Errorf("sow asked for %v despite the empty user_name", asked)
+	}
+	if s.exists("demo") {
+		t.Error("sow new created demo despite the empty user_name")
+	}
+}
+
 func TestNewWithEveryAnswerGivenNeedsNoTerminal(t *testing.T) {
 	s := newSandbox(t)
 
