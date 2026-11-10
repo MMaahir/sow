@@ -336,6 +336,42 @@ func TestNewFrontendReactProjectHealth(t *testing.T) {
 			"export const getVersion = async", "export function useGetVersion", "`/api/version`")
 	})
 
+	t.Run("the root check regenerates the client before it type-checks a new endpoint's caller", func(t *testing.T) {
+		s := s.in(t)
+		s.edit("demo/backend/src/app.ts", func(content string) string {
+			return strings.Replace(content,
+				`  .openapi(readyz, (c) => c.json({ status: "ok" as const }, 200));`,
+				`  .openapi(readyz, (c) => c.json({ status: "ok" as const }, 200))
+  .openapi(
+    createRoute({
+      method: "get",
+      path: "/version",
+      summary: "Version.",
+      responses: statusResponse,
+    }),
+    (c) => c.json({ status: "ok" as const }, 200),
+  );`, 1)
+		})
+		// A real change updates the backend's test of its route list too.
+		s.edit("demo/backend/src/app.test.ts", func(content string) string {
+			return strings.Replace(content, `toEqual(["/healthz", "/readyz"])`, `toEqual(["/healthz", "/readyz", "/version"])`, 1)
+		})
+		unchanged := func(content string) string { return content }
+		s.edit("demo/backend/openapi.json", unchanged)
+		s.edit("demo/frontend/src/client.gen.ts", unchanged)
+		s.mustTool("backend", "mise", "run", "openapi")
+		// The starter route calls the new endpoint while the committed client doesn't have it yet.
+		s.edit("demo/frontend/src/routes/index.tsx", func(content string) string {
+			content = strings.Replace(content, `import { useGetHealthz } from "../client.gen";`,
+				`import { useGetHealthz, useGetVersion } from "../client.gen";`, 1)
+			return strings.Replace(content, "  const { data, isError } = useGetHealthz();",
+				"  const { data, isError } = useGetHealthz();\n  useGetVersion();", 1)
+		})
+
+		// The edits are already formatted, so the pre-commit hooks change no file.
+		s.mustTool(".", "mise", "run", "check")
+	})
+
 	t.Run("the Vite+ pin check passes", func(t *testing.T) {
 		s := s.in(t)
 		s.mustTool(".", "mise", "run", "check-vite-plus-pins")

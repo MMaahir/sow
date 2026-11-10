@@ -37,11 +37,12 @@ test("the starter route shows its heading", async () => {
 });
 
 test("the starter route shows the status from GET /api/healthz", async () => {
-  const fetch = stubBackend(200, { status: "ok" });
+  // The status isn't "ok", so a page that always shows "ok" fails this test.
+  const fetch = stubBackend(200, { status: "starting" });
 
   renderHome();
 
-  expect(await screen.findByText("Backend status: ok")).toBeTruthy();
+  expect(await screen.findByText("Backend status: starting")).toBeTruthy();
   expect(fetch).toHaveBeenCalledWith("/api/healthz", expect.objectContaining({ method: "GET" }));
 });
 

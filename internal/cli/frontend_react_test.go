@@ -92,8 +92,9 @@ func TestNewFrontendReactSharedFilesCoverBothComponents(t *testing.T) {
 	s.mustRun("new", "demo", "--no-input", "--backend", "ts", "--frontend", "react")
 
 	wantContains(t, s.read("demo/mise.toml"),
-		"run = [\n  \"pre-commit run --all-files\",\n  \"mise --cd backend run lint\",\n  \"mise --cd backend run test\",\n"+
-			"  \"mise --cd frontend run generate-client\",\n  \"mise --cd frontend run lint\",\n  \"mise --cd frontend run test\",\n]\n\n[tasks.check-vite-plus-pins]\n")
+		"run = [\n  # The client is regenerated first, because the pre-commit hook type-checks code that may use a new endpoint.\n"+
+			"  \"mise --cd frontend run generate-client\",\n  \"pre-commit run --all-files\",\n"+
+			"  \"mise --cd backend run lint\",\n  \"mise --cd backend run test\",\n  \"mise --cd frontend run lint\",\n  \"mise --cd frontend run test\",\n]\n\n[tasks.check-vite-plus-pins]\n")
 	wantContains(t, s.read("demo/.pre-commit-config.yaml"), "entry: vp check --fix")
 	wantContains(t, s.read("demo/AGENTS.md"),
 		"mise run check` before you commit.\n\n## TypeScript\n\nThe backend is in `backend/`.",

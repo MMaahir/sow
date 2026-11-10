@@ -7,13 +7,16 @@ _.file = ".env"
 [tasks.check]
 description = "Run every check on the project"
 run = [
+[[- if ne .frontend "none" ]]
+  # The client is regenerated first, because the pre-commit hook type-checks code that may use a new endpoint.
+  "mise --cd frontend run generate-client",
+[[- end ]]
   "pre-commit run --all-files",
 [[- if ne .backend "none" ]]
   "mise --cd backend run lint",
   "mise --cd backend run test",
 [[- end ]]
 [[- if ne .frontend "none" ]]
-  "mise --cd frontend run generate-client",
   "mise --cd frontend run lint",
   "mise --cd frontend run test",
 [[- end ]]
