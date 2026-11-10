@@ -83,26 +83,33 @@ The author doesn't read Go, so the Summary uses plain words and glossary terms. 
 
 ## 6. Review and merge
 
-The author doesn't read Go. The review by a second model is the gate, so it's never skipped and the author of the code never reviews their own PR.
+The author doesn't read Go, so review by models is the gate. There are two reviews, in this order, and neither is ever skipped. The model that wrote the code reviews it first. A different model reviews it second. The first review never replaces the second.
 
-1. **Ask a different model to review.** Use the strongest reviewer available that didn't write the code. The author's setup uses `gpt-6.1-sol` for this. Give the reviewer:
+1. **Review your own work first.** Do this after the PR is open and before you ask anyone else. Use the `mattpocock-skills:code-review` skill against `origin/main` if your tools have it. If they don't, read your whole diff (`git diff origin/main...HEAD`) top to bottom and check two things:
+   - Spec: go through the ticket's acceptance criteria one at a time. For each, name the test that covers it and confirm the test would fail without your change.
+   - Standards: go through "Before you commit" in the coding guide and each numbered rule in its sections 3, 4 and 5.
+
+   Fix everything you find, run `mise run check`, and push. Then post a PR comment titled "Self-review" that lists what you found and fixed, or says you found nothing. The second reviewer should get code you already believe is clean.
+2. **Then ask a different model to review.** Use the strongest reviewer available that didn't write the code. The author's setup uses `gpt-6.1-sol` for this. Give the reviewer:
    - the diff command: `git diff origin/main...HEAD`
    - the ticket body and the parent spec number
    - `docs/agents/coding-guide.md` and the ADRs the ticket names
    - this instruction: "Review for two things. Spec: does the code do what the ticket's acceptance criteria say, and is each criterion covered by a test that would fail without the change? Standards: does it follow the coding guide? Also report real bugs. Report each finding with file and line, the axis, and the reason. Don't edit files."
-2. **Answer every finding.** For each one, read the code it points at and decide:
+
+   Don't give the reviewer your self-review findings, so its review stays independent.
+3. **Answer every finding.** For each one, read the code it points at and decide:
    - It's right. Fix it, with a test if it's a behaviour bug.
    - It's wrong. Say why, with evidence: the line of the guide, the ADR, or a test run that shows the behaviour. Send the rebuttal back to the reviewer and let it answer once.
    - You still disagree after its answer. Don't merge. Write both positions in a PR comment and leave the PR for a stronger model or the author.
 
    A reviewer can be wrong. Don't change correct code because a reviewer asked. Don't dismiss a finding because fixing it is work.
-3. **Record the review.** Post a PR comment listing each finding and what happened to it: fixed, rebutted and withdrawn, or open.
-4. **Merge when all of these are true:** no finding is open, `mise run check` passes on the final commit, `mise run test-health` passes or skips only for the author's files, and the branch is up to date with `main`. If the repo has a required `ci-ok` check, it must be green too.
+4. **Record the review.** Post a PR comment listing each finding from the second review and what happened to it: fixed, rebutted and withdrawn, or open.
+5. **Merge when all of these are true:** both reviews are recorded on the PR, no finding is open, `mise run check` passes on the final commit, `mise run test-health` passes or skips only for the author's files, and the branch is up to date with `main`. If the repo has a required `ci-ok` check, it must be green too.
 
    ```sh
    gh pr merge <n> --squash --delete-branch
    ```
-5. Confirm the ticket closed. If the spec has no open tickets left, comment on the spec that it's complete, and leave closing it to the author.
+6. Confirm the ticket closed. If the spec has no open tickets left, comment on the spec that it's complete, and leave closing it to the author.
 
 Several tickets built in one session can share one integration branch and one PR, as the `implement-spec` skill describes. The same gate applies to that PR.
 
@@ -135,7 +142,7 @@ The author's routing. A session that orchestrates others follows it.
 | `difficulty:hard` tickets, planning, specs, answering review findings | The strongest model (Claude Fable) |
 | `difficulty:medium` tickets | Claude Opus |
 | `difficulty:easy` tickets | GLM-5.3-Flash |
-| Code review | GPT-6.1-Sol, never the model that wrote the code |
+| Code review | First the model that wrote the code, then GPT-6.1-Sol |
 
 When a stronger model hands an easy ticket to a smaller one, the brief is the ticket number plus "follow `docs/agents/workflow.md`". Don't restate the ticket. If the ticket isn't clear enough for that, fix the ticket.
 
