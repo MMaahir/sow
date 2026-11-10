@@ -189,6 +189,18 @@ func (s *sandbox) write(root, name, content string) {
 	}
 }
 
+// edit replaces a file in the working directory, such as "demo/package.json",
+// with what change returns for its contents. It puts the original back when
+// the test ends.
+func (s *sandbox) edit(name string, change func(string) string) {
+	s.t.Helper()
+	original := s.read(name)
+	s.write(s.dir, name, change(original))
+	s.t.Cleanup(func() {
+		s.write(s.dir, name, original)
+	})
+}
+
 // read returns the contents of a file in the working directory, such as
 // "demo/README.md".
 func (s *sandbox) read(name string) string {

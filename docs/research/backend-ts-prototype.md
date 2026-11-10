@@ -35,6 +35,16 @@ Run on 2026-11-09 for ticket #34, in a throwaway pnpm workspace outside the repo
 - **New since the ADR:** `vpx <file>` runs TypeScript files and `vp toolchain --json` prints the bundled versions as JSON. The template keeps `node --watch`, as the ADR decided. The pin check in ticket #36 can read `vp toolchain --json`.
 - **Vitest 5.1 supports Node `^22.18.0 || ^24.11.0 || >=26.0.0`.** `.node-version` stays at `24`.
 
+## The pin check
+
+Run on 2026-11-10 for ticket #36, against the same versions.
+
+- `vp toolchain --json` prints `{"schemaVersion": 1, "source": {...}, "nodes": [...], "edges": [...]}`. Each node has an `id` and, for packages and tools, a `version`. The check reads the nodes `vite-plus`, `vite-plus-core` and `vitest`.
+- With a direct `vitest` and `@vitest/coverage-v8` dependency, `vp migrate --no-interactive` adds `vitest: 5.1.0` and `"@vitest/coverage-v8": 5.1.0` to the catalog, rewrites both dependencies to `catalog:`, adds `vitest@*: "catalog:"` to the overrides, and adds `vitest` to `peerDependencyRules`. On a project that is already pinned it changes no tracked file.
+- The catalog has quoted keys such as `"@vitest/coverage-v8"`, so the check parses `pnpm-workspace.yaml` with the `yaml` package, which the root `package.json` declares as a devDependency. The lockfile already held `yaml` 2.9.1 through `vite-plus` and `openapi3-ts`, so the devDependency adds no new package.
+- The check runs from the root, so the root has its own `tsconfig.json` and `@types/node` for `vp check` to type-check `scripts/`.
+- `pnpm exec` installs first when a manifest has changed since the last install. `vp toolchain` run directly doesn't. Through `pnpm exec vp`, an edited catalog that names a missing version fails before the check runs. `pnpm_config_verify_deps_before_run=false` turns the install off.
+
 ## Not proven here
 
 These need the global `vp` in managed mode and are checked by the health tests once it's installed:

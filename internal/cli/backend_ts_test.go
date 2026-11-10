@@ -25,6 +25,7 @@ func TestNewBackendTSRendersTheBackendAndTheWorkspace(t *testing.T) {
 		"package.json",
 		"pnpm-workspace.yaml",
 		"vite.config.ts",
+		"tsconfig.json",
 		".node-version",
 		".vscode/extensions.json",
 		".vscode/settings.json",
@@ -79,6 +80,37 @@ func TestNewMinimalSharedFilesLeaveTheBackendOut(t *testing.T) {
 		if s.exists("demo/" + name) {
 			t.Errorf("the minimal preset rendered %s", name)
 		}
+	}
+}
+
+func TestNewBackendTSGivesTheVitePlusPinTasks(t *testing.T) {
+	s := newSandbox(t)
+	s.fakeTool("vp", fakeVP)
+
+	s.mustRun("new", "demo", "--no-input", "--backend", "ts")
+
+	wantContains(t, s.read("demo/mise.toml"),
+		"[tasks.check-vite-plus-pins]\n",
+		"run = \"node scripts/check-vite-plus-pins.ts\"\n",
+		"[tasks.upgrade-vite-plus]\n",
+		"run = \"pnpm exec vp migrate --no-interactive\"\n")
+	if !s.exists("demo/scripts/check-vite-plus-pins.ts") {
+		t.Error("scripts/check-vite-plus-pins.ts is missing")
+	}
+}
+
+func TestNewMinimalHasNoVitePlusPinTasks(t *testing.T) {
+	s := newSandbox(t)
+
+	s.mustRun("new", "demo", "--no-input", "--preset", "minimal")
+
+	for _, task := range []string{"check-vite-plus-pins", "upgrade-vite-plus"} {
+		if strings.Contains(s.read("demo/mise.toml"), task) {
+			t.Errorf("mise.toml has the %s task in a project with no TypeScript", task)
+		}
+	}
+	if s.exists("demo/scripts") {
+		t.Error("the minimal preset rendered scripts/")
 	}
 }
 
