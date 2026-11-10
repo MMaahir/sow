@@ -30,11 +30,18 @@ type Options struct {
 }
 
 // New renders the template into opts.Dir, runs the follow-up steps and makes
-// the first commit. It renders everything before it writes anything, so a
-// template error leaves no directory behind.
+// the first commit. When the answers turn on a TypeScript component, it first
+// checks that Vite+ is installed and set up. It checks and renders everything
+// before it writes anything, so a failed check or a template error leaves no
+// directory behind.
 func New(ctx context.Context, opts Options) error {
 	if _, err := os.Lstat(opts.Dir); !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("%s already exists", filepath.Base(opts.Dir))
+	}
+	if opts.Answers.TypeScriptOn() {
+		if err := checkViteplus(ctx, opts.Environ, filepath.Dir(opts.Dir)); err != nil {
+			return err
+		}
 	}
 
 	files, err := render.Render(opts.Template, opts.Answers.Dirs(), opts.Answers)

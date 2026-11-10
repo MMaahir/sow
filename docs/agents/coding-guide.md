@@ -33,7 +33,7 @@ Every answer is a string. A component answer has `Component: true`, and its valu
 
 ### Add a stack to a component
 
-1. Add the stack's name to that question's `Choices`.
+1. Add the stack's name to that question's `Choices`. If the stack is TypeScript, add it to the question's `typeScript` list too. `Answers.TypeScriptOn` reads that list, and `sow new` then checks that Vite+ is set up before it writes anything (ADR 0011).
 2. Create `template/<component>-<stack>/`, such as `template/backend-ts/`. `Answers.Dirs()` selects it by that name. Don't add a lookup table.
 3. Put the stack's files inside it at the paths they should have in the project. `template/backend-ts/backend/package.json` becomes `backend/package.json`.
 4. Give the stack a `mise.toml` in its own directory with the `dev`, `test`, `lint` and `build` tasks (ADR 0004), as `template/backend-ts/backend/mise.toml` does.
