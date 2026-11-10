@@ -6,9 +6,13 @@ import (
 	"testing"
 )
 
-// fakeVP stands in for Vite+'s CLI. Like the real "vp install", it writes the
-// lockfile.
-const fakeVP = `[ "$1" = install ] && echo "lockfileVersion: '9.0'" > pnpm-lock.yaml`
+// fakeVP stands in for Vite+'s CLI. "vp env doctor" passes, and like the real
+// "vp install", it writes the lockfile. Any other command fails.
+const fakeVP = `case "$*" in
+"env doctor") ;;
+install) echo "lockfileVersion: '9.0'" > pnpm-lock.yaml ;;
+*) exit 1 ;;
+esac`
 
 func TestNewBackendTSRendersTheBackendAndTheWorkspace(t *testing.T) {
 	s := newSandbox(t)
@@ -114,7 +118,7 @@ func TestNewReportsAMissingToolWithTheCommandAndTheDirectory(t *testing.T) {
 
 func TestNewReportsAFailedFollowUpStepAndKeepsTheFiles(t *testing.T) {
 	s := newSandbox(t)
-	s.fakeTool("vp", "echo registry unreachable >&2; exit 3")
+	s.fakeTool("vp", `[ "$*" = "env doctor" ] && exit 0; echo registry unreachable >&2; exit 3`)
 
 	got := s.run("new", "demo", "--no-input", "--backend", "ts")
 
@@ -130,5 +134,50 @@ func TestNewReportsAFailedFollowUpStepAndKeepsTheFiles(t *testing.T) {
 	}
 	if s.exists("demo/.git") {
 		t.Error("sow new made a commit despite the failed follow-up step")
+	}
+}
+
+func TestNewBackendTSWithoutVPPrintsTheInstallCommand(t *testing.T) {
+	s := newSandbox(t)
+	s.isolatePath()
+
+	got := s.run("new", "demo", "--no-input", "--backend", "ts")
+
+	if got.code != 1 {
+		t.Errorf("exit code = %d, want 1", got.code)
+	}
+	wantContains(t, got.stderr, "vp isn't installed", "curl -fsSL https://vite.plus | bash")
+	if s.exists("demo") {
+		t.Error("sow new created demo without vp")
+	}
+}
+
+func TestNewBackendTSReportsAFailingVPEnvDoctor(t *testing.T) {
+	s := newSandbox(t)
+	s.fakeTool("vp", `[ "$*" = "env doctor" ] && { echo "pnpm shim isn't on PATH"; exit 1; }
+echo "lockfileVersion: '9.0'" > pnpm-lock.yaml`)
+
+	got := s.run("new", "demo", "--no-input", "--backend", "ts")
+
+	if got.code != 1 {
+		t.Errorf("exit code = %d, want 1", got.code)
+	}
+	wantContains(t, got.stderr,
+		"fix what vp env doctor reports, then try again",
+		"vp env doctor failed",
+		"pnpm shim isn't on PATH")
+	if s.exists("demo") {
+		t.Error("sow new created demo despite the failing vp env doctor")
+	}
+}
+
+func TestNewMinimalWithoutVPSucceeds(t *testing.T) {
+	s := newSandbox(t)
+	s.isolatePath("git")
+
+	s.mustRun("new", "demo", "--no-input", "--preset", "minimal")
+
+	if !s.exists("demo/.git") {
+		t.Error("sow new made no first commit")
 	}
 }

@@ -42,6 +42,9 @@ type Question struct {
 	Component bool
 	// check reports why a value is invalid, or nil. It may be nil.
 	check func(value string) error
+	// typeScript lists the choices that are TypeScript stacks. A project with
+	// one of them needs the global vp CLI from Vite+ (ADR 0011).
+	typeScript []string
 }
 
 // Questions returns every question in the order the answers file lists them.
@@ -56,11 +59,12 @@ func Questions() []Question {
 		{Key: "user_email", Help: "Your email, used as the project's author email.", Personal: true},
 		{Key: "github_user", Help: "Your GitHub username.", Personal: true},
 		{
-			Key:       "backend",
-			Help:      "Backend stack.",
-			Choices:   []string{None, "ts"},
-			Default:   None,
-			Component: true,
+			Key:        "backend",
+			Help:       "Backend stack.",
+			Choices:    []string{None, "ts"},
+			Default:    None,
+			Component:  true,
+			typeScript: []string{"ts"},
 		},
 	}
 }
@@ -170,4 +174,15 @@ func (a Answers) Dirs() []string {
 		}
 	}
 	return dirs
+}
+
+// TypeScriptOn reports whether these answers turn on a component with a
+// TypeScript stack, which needs Vite+ (ADR 0011).
+func (a Answers) TypeScriptOn() bool {
+	for _, q := range Questions() {
+		if slices.Contains(q.typeScript, a[q.Key]) {
+			return true
+		}
+	}
+	return false
 }

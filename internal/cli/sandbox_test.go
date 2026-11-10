@@ -111,6 +111,21 @@ func (s *sandbox) fakeTool(name, script string) {
 	}
 }
 
+// isolatePath makes the sandbox's bin directory the only directory on its
+// PATH, so a tool the test didn't fake isn't installed. For each name in
+// realTools, it adds a fake tool that runs the real one.
+func (s *sandbox) isolatePath(realTools ...string) {
+	s.t.Helper()
+	for _, name := range realTools {
+		executable, err := exec.LookPath(name)
+		if err != nil {
+			s.t.Fatal(err)
+		}
+		s.fakeTool(name, `exec "`+executable+`" "$@"`)
+	}
+	s.extraEnv = append(s.extraEnv, "PATH="+filepath.Join(s.home, "bin"))
+}
+
 // terminal makes stdin a terminal where the author types the typed answers,
 // by key, and returns the prompter that records what sow asked.
 func (s *sandbox) terminal(typed map[string]string) *scriptedPrompter {
