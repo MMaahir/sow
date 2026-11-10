@@ -153,7 +153,7 @@ func TestNewRendersClaudeSettingsAsValidJSON(t *testing.T) {
 	}
 }
 
-func TestNewDoesNotRenderDotEnv(t *testing.T) {
+func TestNewIgnoresDotEnv(t *testing.T) {
 	s := newSandbox(t)
 
 	s.mustRun("new", "demo", "--no-input", "--preset", "minimal")
@@ -161,8 +161,38 @@ func TestNewDoesNotRenderDotEnv(t *testing.T) {
 	if !s.exists("demo/.env.example") {
 		t.Error(".env.example doesn't exist")
 	}
-	if s.exists("demo/.env") {
-		t.Error(".env was rendered, but the template never contains .env")
+	if got := s.git("check-ignore", ".env"); got != ".env" {
+		t.Errorf("git check-ignore .env = %q, want it ignored", got)
+	}
+}
+
+func TestNewCopiesDotEnvExampleToDotEnv(t *testing.T) {
+	s := newSandbox(t)
+
+	s.mustRun("new", "demo", "--no-input")
+
+	want := "# Local settings and secrets for this project. Copy it to .env and fill it in. mise loads .env.\n"
+	if got := s.read("demo/.env"); got != want {
+		t.Errorf(".env = %q, want %q", got, want)
+	}
+}
+
+func TestNewLeavesDotEnvOutOfTheFirstCommit(t *testing.T) {
+	s := newSandbox(t)
+
+	s.mustRun("new", "demo", "--no-input")
+
+	files := s.git("ls-tree", "--name-only", "-r", "HEAD")
+	for _, name := range strings.Split(files, "\n") {
+		if name == ".env" {
+			t.Error(".env is in the first commit, but .gitignore ignores it")
+		}
+	}
+	if !s.exists("demo/.env") {
+		t.Error(".env doesn't exist next to the first commit")
+	}
+	if got := s.git("status", "--porcelain"); got != "" {
+		t.Errorf("uncommitted files after sow new:\n%s", got)
 	}
 }
 
