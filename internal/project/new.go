@@ -29,9 +29,9 @@ type Options struct {
 	Environ []string
 }
 
-// New renders the template into opts.Dir and makes the first commit. It
-// renders everything before it writes anything, so a template error leaves no
-// directory behind.
+// New renders the template into opts.Dir, runs the follow-up steps and makes
+// the first commit. It renders everything before it writes anything, so a
+// template error leaves no directory behind.
 func New(ctx context.Context, opts Options) error {
 	if _, err := os.Lstat(opts.Dir); !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("%s already exists", filepath.Base(opts.Dir))
@@ -49,6 +49,10 @@ func New(ctx context.Context, opts Options) error {
 
 	if err := render.Write(opts.Dir, files); err != nil {
 		return fmt.Errorf("write the project: %w", err)
+	}
+
+	if err := runFollowUpSteps(ctx, opts.Environ, opts.Dir); err != nil {
+		return err
 	}
 
 	for _, args := range [][]string{
