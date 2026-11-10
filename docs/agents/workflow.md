@@ -140,7 +140,7 @@ The author's routing. A session that orchestrates others follows it.
 | Work | Model |
 |---|---|
 | `difficulty:hard` tickets, planning, specs, answering review findings | The strongest model (Claude Fable) |
-| `difficulty:medium` tickets | Claude Opus |
+| `difficulty:medium` tickets | Claude Opus, at medium reasoning effort |
 | `difficulty:easy` tickets | GLM-5.3-Flash |
 | Code review | First the model that wrote the code, then GPT-6.1-Sol |
 
