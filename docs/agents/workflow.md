@@ -141,7 +141,7 @@ The author's routing. A session that orchestrates others follows it.
 |---|---|
 | `difficulty:hard` tickets, planning, specs, answering review findings | The strongest model (Claude Fable) |
 | `difficulty:medium` tickets | Claude Opus, at medium reasoning effort |
-| `difficulty:easy` tickets | GLM-5.3-Flash |
+| `difficulty:easy` tickets | GLM-5.3-Flash, at its `max` reasoning variant |
 | Code review | First the model that wrote the code, then GPT-6.1-Sol |
 
 When a stronger model hands an easy ticket to a smaller one, the brief is the ticket number plus "follow `docs/agents/workflow.md`". Don't restate the ticket. If the ticket isn't clear enough for that, fix the ticket.
