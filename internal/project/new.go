@@ -73,7 +73,7 @@ func New(ctx context.Context, opts Options) error {
 func run(ctx context.Context, environ []string, dir, name string, args ...string) error {
 	executable, err := lookPath(environ, name)
 	if err != nil {
-		return err
+		return fmt.Errorf("%s %s failed in %s: %w", name, strings.Join(args, " "), dir, err)
 	}
 	cmd := exec.CommandContext(ctx, executable, args...)
 	cmd.Dir = dir
@@ -86,9 +86,13 @@ func run(ctx context.Context, environ []string, dir, name string, args ...string
 	return nil
 }
 
-// lookPath finds the executable called name in the PATH of environ. The
-// standard exec.LookPath reads the real process's PATH, which would ignore the
-// environment sow was given.
+// lookPath returns the absolute path of the executable called name, found in
+// the PATH of environ. The standard exec.LookPath reads the real process's
+// PATH, which would ignore the environment sow was given.
+//
+// It skips PATH entries that aren't absolute. A relative entry means a
+// different directory to the command than to sow, because the command runs in
+// the project directory.
 func lookPath(environ []string, name string) (string, error) {
 	var pathList string
 	for _, entry := range environ {
@@ -97,6 +101,9 @@ func lookPath(environ []string, name string) (string, error) {
 		}
 	}
 	for _, dir := range filepath.SplitList(pathList) {
+		if !filepath.IsAbs(dir) {
+			continue
+		}
 		candidate := filepath.Join(dir, name)
 		info, err := os.Stat(candidate)
 		if err == nil && info.Mode().IsRegular() && info.Mode().Perm()&0o111 != 0 {

@@ -11,7 +11,7 @@ func TestNewRendersTheProjectAndCommitsIt(t *testing.T) {
 
 	s.mustRun("new", "demo", "--no-input")
 
-	if got, want := s.read("demo/README.md"), "# demo\n\n## Getting started\n\nInstall the tools:\n\n    mise install\n\nCheck the project:\n\n    mise run check\n"; got != want {
+	if got, want := s.read("demo/README.md"), "# demo\n\n## Getting started\n\nInstall the tools and the git hooks:\n\n    mise install\n    pre-commit install\n\nCheck the project:\n\n    mise run check\n"; got != want {
 		t.Errorf("README.md = %q, want %q", got, want)
 	}
 	if got, want := s.git("log", "--format=%s"), "chore: initial commit from sow"; got != want {

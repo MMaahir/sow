@@ -94,6 +94,16 @@ func TestNewRejectsAnInvalidTypedAnswer(t *testing.T) {
 	}
 }
 
+func TestNewWithEveryAnswerGivenNeedsNoTerminal(t *testing.T) {
+	s := newSandbox(t)
+
+	s.mustRun("new", "demo", "--backend", "none")
+
+	if !s.exists("demo/README.md") {
+		t.Error("sow new didn't create demo")
+	}
+}
+
 func TestNewRefusesToAskWithoutATerminal(t *testing.T) {
 	s := newSandbox(t)
 

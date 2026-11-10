@@ -55,7 +55,8 @@ Add one entry to `presets` in `internal/answers/presets.go`, and tests like `Tes
 
 1. Add one `followUpStep` to the list in `followUpSteps` in `internal/project/steps.go`. Set `name` to what the step does, `file` to a path relative to the project root, and `run` to the function that does the work.
 2. The step runs only if its file exists in the project, after the files are written and before the first commit. Its error is wrapped with `name`.
-3. Test it in `internal/cli/new_test.go` through the sandbox: the step's effect is on disk, and whatever it creates stays out of the first commit.
+3. Test it in `internal/cli/` through the sandbox: the step's effect is on disk, and `git status` is clean after `sow new`. A file the step creates for the local machine only, such as `.env`, is gitignored and stays out of the first commit. A file the project needs, such as the lockfile `vp install` writes, is in the first commit.
+4. Test the failure too: the CLI exits 1, stderr names the command and the directory, and the rendered files are still there.
 
 ### Add a command
 
@@ -99,12 +100,14 @@ Each rule has a reason. The rule still applies when the reason seems not to.
 
 ### The seams
 
-There are two places to test. Don't test anywhere else unless your ticket names a new seam.
+There are three places to test. Don't test anywhere else unless your ticket names a new seam.
 
 - **`cli.Run`, through the sandbox** in `internal/cli/sandbox_test.go`. This is the default. A test creates a sandbox, runs `sow` with arguments, and checks the exit code, the output and the files. Everything in `answers` and `project` is tested this way.
 
   The sandbox replaces the terminal through one seam, `Env.Prompter`. `cmd/sow/main.go` sets it only when stdin is a terminal, and the sandbox leaves it unset, so a plain `s.run` has no terminal. To answer prompts, call `s.terminal(map[string]string{"backend": "none"})` before the run. It returns a scripted prompter that answers by key and records each question in `asked`. A question the test didn't script acts as Ctrl+C.
 - **`render.Render`, with an in-memory template** (`fstest.MapFS`), in `internal/render/render_test.go`. Use it only for rules of the template format, such as what happens when two directories contain the same path.
+
+- **The embedded template itself**, in `template_test.go` at the repo root. Use it only for rules about the template's source files that a rendered project can't show, such as "no file named `.env`" or "`package.json` is never a `.tmpl`".
 
 Don't write tests for unexported functions, and don't write tests in `internal/answers` or `internal/project`. If something there can't be reached through `cli.Run`, it's either dead code or the ticket should name a seam.
 
@@ -140,8 +143,9 @@ func TestNewRefusesAnExistingDirectory(t *testing.T) {
 
     ```go
     func TestNewBackendTSProjectHealth(t *testing.T) {
-    	s := newHealthSandbox(t, "mise", "pre-commit", "vp", "node")
+    	s := newHealthSandbox(t, "mise", "vp", "node")
     	s.newProject("--backend", "ts")
+    	s.mustTool(".", "mise", "install")
 
     	t.Run("lint, test and build pass in the backend", func(t *testing.T) {
     		s := s.in(t)

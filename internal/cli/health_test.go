@@ -73,16 +73,18 @@ func (s *sandbox) mustTool(dir, name string, args ...string) string {
 }
 
 func TestNewMinimalProjectHealth(t *testing.T) {
-	s := newHealthSandbox(t, "mise", "pre-commit")
+	s := newHealthSandbox(t, "mise")
 
 	s.newProject("--preset", "minimal")
 
+	s.mustTool(".", "mise", "install")
 	s.mustTool(".", "mise", "run", "check")
 }
 
 func TestNewBackendTSProjectHealth(t *testing.T) {
-	s := newHealthSandbox(t, "mise", "pre-commit", "vp", "node")
+	s := newHealthSandbox(t, "mise", "vp", "node")
 	s.newProject("--backend", "ts")
+	s.mustTool(".", "mise", "install")
 
 	t.Run("the root check task passes", func(t *testing.T) {
 		s := s.in(t)
