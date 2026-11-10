@@ -289,12 +289,51 @@ func TestNewFrontendReactProjectHealth(t *testing.T) {
 
 	t.Run("lint, test and build pass in the frontend", func(t *testing.T) {
 		s := s.in(t)
-		for _, task := range []string{"lint", "test", "build"} {
+		for _, task := range []string{"lint", "build"} {
 			s.mustTool("frontend", "mise", "run", task)
 		}
 		if !s.exists("demo/frontend/dist/index.html") {
 			t.Error("mise run build wrote no frontend/dist/index.html")
 		}
+
+		output := s.mustTool("frontend", "mise", "run", "test", "--reporter=verbose")
+
+		wantContains(t, output, "the starter route shows the status from GET /api/healthz")
+	})
+
+	t.Run("generate-client leaves a fresh project unchanged", func(t *testing.T) {
+		s := s.in(t)
+		s.mustTool("frontend", "mise", "run", "generate-client")
+
+		if changed := s.git("status", "--porcelain"); changed != "" {
+			t.Errorf("mise run generate-client changed the project:\n%s", changed)
+		}
+	})
+
+	t.Run("a new backend route changes the client and fails the freshness check", func(t *testing.T) {
+		s := s.in(t)
+		s.edit("demo/backend/src/app.ts", func(content string) string {
+			return strings.Replace(content,
+				`  .openapi(readyz, (c) => c.json({ status: "ok" as const }, 200));`,
+				`  .openapi(readyz, (c) => c.json({ status: "ok" as const }, 200))
+  .openapi(
+    createRoute({ method: "get", path: "/version", summary: "Version.", responses: statusResponse }),
+    (c) => c.json({ status: "ok" as const }, 200),
+  );`, 1)
+		})
+		// Editing with no change makes the sandbox put the generated files back when the test ends.
+		unchanged := func(content string) string { return content }
+		s.edit("demo/backend/openapi.json", unchanged)
+		s.edit("demo/frontend/src/client.gen.ts", unchanged)
+		s.mustTool("backend", "mise", "run", "openapi")
+
+		s.mustTool("frontend", "mise", "run", "generate-client")
+
+		if output, err := s.tool(".", "git", "diff", "--exit-code", "--", "frontend/src/client.gen.ts"); err == nil {
+			t.Errorf("git diff --exit-code passed after the backend gained a route:\n%s", output)
+		}
+		wantContains(t, s.read("demo/frontend/src/client.gen.ts"),
+			"export const getVersion = async", "export function useGetVersion", "`/api/version`")
 	})
 
 	t.Run("the Vite+ pin check passes", func(t *testing.T) {

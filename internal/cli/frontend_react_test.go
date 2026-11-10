@@ -22,6 +22,8 @@ func TestNewFrontendReactRendersTheFrontendInTheWorkspace(t *testing.T) {
 		"frontend/vite.config.ts",
 		"frontend/mise.toml",
 		"frontend/index.html",
+		"frontend/orval.config.ts",
+		"frontend/src/client.gen.ts",
 		"frontend/src/main.tsx",
 		"frontend/src/router.ts",
 		"frontend/src/routeTree.gen.ts",
@@ -39,6 +41,17 @@ func TestNewFrontendReactRendersTheFrontendInTheWorkspace(t *testing.T) {
 	if got := s.git("status", "--porcelain"); got != "" {
 		t.Errorf("uncommitted files after sow new:\n%s", got)
 	}
+}
+
+func TestNewFrontendReactCommitsTheGeneratedClient(t *testing.T) {
+	s := newSandbox(t)
+	s.fakeTool("vp", fakeVP)
+
+	s.mustRun("new", "demo", "--no-input", "--backend", "ts", "--frontend", "react")
+
+	first := s.git("rev-list", "--max-parents=0", "HEAD")
+	wantContains(t, s.git("show", first+":frontend/src/client.gen.ts"),
+		"export const getHealthz = async", "export function useGetHealthz", "`/api/healthz`")
 }
 
 func TestNewFrontendReactGivesTheStackInterfaceTasks(t *testing.T) {
@@ -62,6 +75,10 @@ run = "vp check"
 [tasks.build]
 description = "Build the frontend into dist/"
 run = "vp build"
+
+[tasks.generate-client]
+description = "Write the API client in src/client.gen.ts from backend/openapi.json"
+run = "pnpm exec orval"
 `
 	if got := s.read("demo/frontend/mise.toml"); got != want {
 		t.Errorf("frontend/mise.toml =\n%s\nwant\n%s", got, want)
@@ -76,14 +93,16 @@ func TestNewFrontendReactSharedFilesCoverBothComponents(t *testing.T) {
 
 	wantContains(t, s.read("demo/mise.toml"),
 		"run = [\n  \"pre-commit run --all-files\",\n  \"mise --cd backend run lint\",\n  \"mise --cd backend run test\",\n"+
-			"  \"mise --cd frontend run lint\",\n  \"mise --cd frontend run test\",\n]\n\n[tasks.check-vite-plus-pins]\n")
+			"  \"mise --cd frontend run generate-client\",\n  \"mise --cd frontend run lint\",\n  \"mise --cd frontend run test\",\n]\n\n[tasks.check-vite-plus-pins]\n")
 	wantContains(t, s.read("demo/.pre-commit-config.yaml"), "entry: vp check --fix")
 	wantContains(t, s.read("demo/AGENTS.md"),
 		"mise run check` before you commit.\n\n## TypeScript\n\nThe backend is in `backend/`.",
 		"`mise run build` and `mise run openapi`.\n\nThe frontend is in `frontend/`. Run its tasks from that directory: "+
-			"`mise run dev`, `mise run test`, `mise run lint` and `mise run build`.\n\nVite+ is the toolchain.",
+			"`mise run dev`, `mise run test`, `mise run lint`, `mise run build` and `mise run generate-client`.\n\nVite+ is the toolchain.",
 		"- Import test functions from `vite-plus/test`.\n- Relative imports in `backend/` end in `.ts`",
 		"commit `openapi.json`.\n- Routes are files in `frontend/src/routes/`.",
+		"`.test.tsx`.\n- The frontend calls the backend through the client in `frontend/src/client.gen.ts`, "+
+			"which `mise run generate-client` writes from `backend/openapi.json`.",
 		"\n- After `vite-plus` changes version, run `mise run upgrade-vite-plus` from the root")
 }
 

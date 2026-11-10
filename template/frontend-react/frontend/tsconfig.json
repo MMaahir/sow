@@ -13,5 +13,5 @@
     "erasableSyntaxOnly": true,
     "verbatimModuleSyntax": true
   },
-  "include": ["src", "vite.config.ts"]
+  "include": ["src", "orval.config.ts", "vite.config.ts"]
 }
