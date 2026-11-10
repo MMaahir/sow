@@ -1,6 +1,11 @@
 [tools]
 go = "1.27.3"
 golangci-lint = "2.15.0"
+# Zensical builds the docs site. mise installs it with uv, and uv runs it on
+# the pinned Python, so a machine needs neither of them beforehand.
+python = "3.14.10"
+uv = "0.13.7"
+"pipx:zensical" = "0.1.0"
 
 [tasks.build]
 description = "Compile every package"
@@ -25,3 +30,14 @@ run = "go test ./..."
 [tasks.check]
 description = "The gate for every commit: build, lint and fast tests"
 depends = ["build", "lint", "test"]
+
+[tasks.docs-build]
+description = "Build the docs site into site/, failing on a broken link or a missing page in the navigation"
+run = [
+  "python scripts/check-docs-nav.py",
+  "zensical build --strict",
+]
+
+[tasks.docs-serve]
+description = "Serve the docs site locally and rebuild it on each change"
+run = "zensical serve"

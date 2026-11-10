@@ -49,8 +49,9 @@ Each project records the sow version it came from, so `sow update` can apply tem
 ## Working on sow
 
 ```sh
-mise install     # Go and the linters
-mise run check   # build, lint and test
+mise install         # Go, the linters and Zensical
+mise run check       # build, lint and test
+mise run docs-build  # build the docs site into site/
 ```
 
 ## Docs
