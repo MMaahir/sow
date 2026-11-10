@@ -14,4 +14,5 @@ Vite+ is the toolchain. Its CLI is `vp`, and it installs Node and pnpm.
 - Import test functions from `vite-plus/test`.
 - Relative imports end in `.ts`, because Node runs the source files directly in development.
 - After changing a route, run `mise run openapi` and commit `openapi.json`.
+- After `vite-plus` changes version, run `mise run upgrade-vite-plus` from the root, check the result with `mise run check-vite-plus-pins`, and commit it.
 [[- end ]]

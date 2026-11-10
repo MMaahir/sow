@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -82,6 +83,9 @@ func TestNewMinimalProjectHealth(t *testing.T) {
 
 func TestNewBackendTSProjectHealth(t *testing.T) {
 	s := newHealthSandbox(t, "mise", "pre-commit", "vp", "node")
+	// Where vp runs as pnpm exec vp, pnpm installs an edited manifest before
+	// the pin check can read it. The global vp doesn't.
+	s.extraEnv = append(s.extraEnv, "pnpm_config_verify_deps_before_run=false")
 	s.newProject("--backend", "ts")
 
 	t.Run("the root check task passes", func(t *testing.T) {
@@ -124,6 +128,69 @@ func TestNewBackendTSProjectHealth(t *testing.T) {
 		if changed := s.git("status", "--porcelain", "backend/openapi.json"); changed != "" {
 			t.Errorf("mise run openapi changed the committed file:\n%s", s.git("diff", "backend/openapi.json"))
 		}
+	})
+
+	t.Run("the Vite+ pin check passes", func(t *testing.T) {
+		s := s.in(t)
+		s.mustTool(".", "mise", "run", "check-vite-plus-pins")
+	})
+
+	t.Run("a vite alias at another version fails the pin check", func(t *testing.T) {
+		s := s.in(t)
+		alias := regexp.MustCompile(`(?m)^  vite: npm:@voidzero-dev/vite-plus-core@.*$`)
+		s.edit("demo/pnpm-workspace.yaml", func(content string) string {
+			return alias.ReplaceAllString(content, "  vite: npm:@voidzero-dev/vite-plus-core@0.0.1")
+		})
+
+		output, err := s.tool(".", "mise", "run", "check-vite-plus-pins")
+
+		if err == nil {
+			t.Fatalf("the pin check passed with the vite alias at 0.0.1:\n%s", output)
+		}
+		wantContains(t, output,
+			"vite: the catalog pins npm:@voidzero-dev/vite-plus-core@0.0.1",
+			"mise run upgrade-vite-plus")
+	})
+
+	t.Run("a direct vitest dependency with no override fails the pin check", func(t *testing.T) {
+		s := s.in(t)
+		s.edit("demo/backend/package.json", func(content string) string {
+			return strings.Replace(content, `"vite-plus": "catalog:"`, `"vite-plus": "catalog:",
+    "vitest": ">=5"`, 1)
+		})
+
+		output, err := s.tool(".", "mise", "run", "check-vite-plus-pins")
+
+		if err == nil {
+			t.Fatalf("the pin check passed with a direct vitest dependency:\n%s", output)
+		}
+		wantContains(t, output,
+			"vitest: backend/package.json pins >=5, but vp toolchain reports Vitest",
+			"vitest: backend/package.json depends on Vitest directly, but no vitest@* override pins Vitest")
+	})
+
+	t.Run("a vitest override at another version fails the pin check", func(t *testing.T) {
+		s := s.in(t)
+		s.edit("demo/pnpm-workspace.yaml", func(content string) string {
+			return strings.Replace(content, "overrides:\n", "overrides:\n  vitest@*: 0.0.1\n", 1)
+		})
+
+		output, err := s.tool(".", "mise", "run", "check-vite-plus-pins")
+
+		if err == nil {
+			t.Fatalf("the pin check passed with the vitest override at 0.0.1:\n%s", output)
+		}
+		wantContains(t, output, "vitest: the vitest@* override pins 0.0.1, but vp toolchain reports Vitest")
+	})
+
+	t.Run("upgrade-vite-plus leaves a project that is already pinned unchanged", func(t *testing.T) {
+		s := s.in(t)
+		s.mustTool(".", "mise", "run", "upgrade-vite-plus")
+
+		if changed := s.git("status", "--porcelain"); changed != "" {
+			t.Errorf("mise run upgrade-vite-plus changed the project:\n%s", changed)
+		}
+		s.mustTool(".", "mise", "run", "check-vite-plus-pins")
 	})
 
 	t.Run("the working tree is clean after every task", func(t *testing.T) {

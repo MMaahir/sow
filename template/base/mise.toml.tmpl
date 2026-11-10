@@ -10,3 +10,13 @@ run = [
   "mise --cd backend run test",
 [[- end ]]
 ]
+[[- if eq .backend "ts" ]]
+
+[tasks.check-vite-plus-pins]
+description = "Check that the Vite+ pins in pnpm-workspace.yaml match the installed Vite+"
+run = "node scripts/check-vite-plus-pins.ts"
+
+[tasks.upgrade-vite-plus]
+description = "Re-pin the vite alias and Vitest to the installed vite-plus"
+run = "pnpm exec vp migrate --no-interactive"
+[[- end ]]
