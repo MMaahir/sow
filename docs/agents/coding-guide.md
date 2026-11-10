@@ -26,8 +26,10 @@ Copy the existing code for each of these. Don't invent a second way.
 
 1. Add one `Question` to the list in `Questions()` in `internal/answers/answers.go`. Put it where it should appear in the answers file.
 2. That's all the wiring. The `--flag`, the validation, the answers file entry and the template value `[[ .your_key ]]` all come from that entry.
-3. Add tests in `internal/cli/new_test.go`: the default is recorded, the flag is recorded, a bad value is rejected and the error lists the choices.
-4. Update the expected file in `TestNewWritesTheAnswersFile`.
+3. If the answer only makes sense when a component is on, set `Needs` to that component's key, as `frontend` does with `Needs: "backend"`. `answers.Resolve` then rejects the answer while that component is `none`, with a message that names the flag to pass, and `sow new` doesn't ask the question when that component is off. Don't write a second check. Add a test like `TestNewRejectsAFrontendWithoutABackend`.
+4. Add tests in `internal/cli/new_test.go`: the default is recorded, the flag is recorded, a bad value is rejected and the error lists the choices.
+5. Update the expected file in `TestNewWritesTheAnswersFile`.
+6. If it's a component answer, set it to `none` in the `minimal` preset, so the preset still turns no components on and `sow new --preset minimal` asks nothing about it.
 
 Every answer is a string. A component answer has `Component: true`, and its value is a stack name or `none`. That holds for every component, including one with a single stack: `database` is `none` or `postgres`, never `true` or `false`.
 
@@ -37,7 +39,7 @@ Every answer is a string. A component answer has `Component: true`, and its valu
 2. Create `template/<component>-<stack>/`, such as `template/backend-ts/`. `Answers.Dirs()` selects it by that name. Don't add a lookup table.
 3. Put the stack's files inside it at the paths they should have in the project. `template/backend-ts/backend/package.json` becomes `backend/package.json`.
 4. Give the stack a `mise.toml` in its own directory with the `dev`, `test`, `lint` and `build` tasks (ADR 0004), as `template/backend-ts/backend/mise.toml` does.
-5. Shared files in `template/base/` that must know about the stack are `.tmpl` files that branch on the answer: the root `mise.toml`, `.pre-commit-config.yaml` and `AGENTS.md`. Add a branch there. Don't put a second copy of a shared file in the stack's directory.
+5. Shared files in `template/base/` that must know about the stack are `.tmpl` files that branch on the answer: the root `mise.toml`, `.pre-commit-config.yaml` and `AGENTS.md`. Add a branch there. Don't put a second copy of a shared file in the stack's directory. A part every TypeScript stack shares, such as the Vite+ tasks, names each TypeScript stack in its condition: `[[- if or (eq .backend "ts") (eq .frontend "react") ]]`. Add a TypeScript stack to each of those conditions.
 6. Add fast tests with a fake tool (see "Start an external command"), like `internal/cli/backend_ts_test.go`, and health tests like `TestNewBackendTSProjectHealth`.
 7. Prove the stack in a throwaway project outside the repo first, and record the versions and surprises in `docs/research/`, as `docs/research/backend-ts-prototype.md` does.
 
@@ -176,7 +178,7 @@ ADR 0012 defines the template format. It's a compatibility contract, because `so
 
 1. **Add `.tmpl` only when the file needs an answer.** Plain files are safer and other tools can parse them. Keep `package.json`, `pnpm-workspace.yaml` and lockfiles plain, so Renovate can read them.
 2. **Delimiters are `[[` and `]]`.** `{{ }}` passes through untouched.
-3. **Templates only substitute answers and branch on them**: `[[ .project_name ]]` and `[[ if eq .backend "ts" ]]...[[ end ]]`. No loops, no variables, no nested templates, no custom functions. If you need more, the file is doing too much. Stop and comment on the ticket.
+3. **Templates only substitute answers and branch on them**: `[[ .project_name ]]` and `[[ if eq .backend "ts" ]]...[[ end ]]`. A condition compares answers with `eq` and `ne`, and joins comparisons with `or` and `and`. No loops, no variables, no nested templates, no custom functions. If you need more, the file is doing too much. Stop and comment on the ticket.
 4. **Put `[[- if ... ]]` and `[[- end ]]` on their own lines, with the dash on the left only.** `[[-` removes the whitespace before the action, which is the previous line's newline, so a skipped branch leaves no blank line and the lines inside the branch keep their indentation. Never write `-]]`, because it also removes the indentation of the next line. Check the rendered output in a test, as `TestRenderABranchOnItsOwnLinesLeavesNoBlankLines` does.
 
    ```

@@ -9,7 +9,7 @@ import (
 
 // presets maps each preset's name to the answers it fills in.
 var presets = map[string]Answers{
-	"minimal": {"backend": None},
+	"minimal": {"backend": None, "frontend": None},
 }
 
 // PresetNames returns the names of every preset, sorted.

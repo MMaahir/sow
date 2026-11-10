@@ -46,6 +46,11 @@ type Question struct {
 	// one of them gets the shared "typescript" template directory and needs
 	// the global vp CLI from Vite+ (ADR 0011).
 	typeScript []string
+	// Needs is the key of a component answer that must be on for this one to
+	// be on. Empty means this answer depends on no other. Resolve rejects
+	// answers that break the rule, and sow doesn't ask a question whose
+	// needed component is off.
+	Needs string
 }
 
 // Questions returns every question in the order the answers file lists them.
@@ -66,6 +71,15 @@ func Questions() []Question {
 			Default:    None,
 			Component:  true,
 			typeScript: []string{"ts"},
+		},
+		{
+			Key:        "frontend",
+			Help:       "Frontend stack.",
+			Choices:    []string{None, "react"},
+			Default:    None,
+			Component:  true,
+			typeScript: []string{"react"},
+			Needs:      "backend",
 		},
 	}
 }
@@ -122,7 +136,8 @@ func CheckGiven(sources ...Answers) error {
 // wins. A question no source answers takes its default.
 //
 // The returned error lists every problem, not only the first: an unknown key,
-// a missing required answer, and a value its question doesn't allow.
+// a missing required answer, a value its question doesn't allow, and an answer
+// that is on while the component it needs is off.
 func Resolve(sources ...Answers) (Answers, error) {
 	questions := Questions()
 	resolved := Answers{}
@@ -149,6 +164,28 @@ func Resolve(sources ...Answers) (Answers, error) {
 			problems = append(problems, fmt.Errorf("%s is missing: %s", q.Key, howToAnswer(q)))
 		}
 		resolved[q.Key] = value
+	}
+
+	for _, q := range questions {
+		if q.Needs == "" || resolved[q.Key] == None || resolved[q.Needs] != None {
+			continue
+		}
+		// The fix names every stack of the needed component, as in
+		// "pass --backend ts or --backend go".
+		flag := "--" + strings.ReplaceAll(q.Needs, "_", "-") + " "
+		var stacks []string
+		for _, needed := range questions {
+			if needed.Key != q.Needs {
+				continue
+			}
+			for _, choice := range needed.Choices {
+				if choice != None {
+					stacks = append(stacks, flag+choice)
+				}
+			}
+		}
+		problems = append(problems, fmt.Errorf("%s needs a %s: pass %s",
+			q.Key, q.Needs, strings.Join(stacks, " or ")))
 	}
 
 	if len(problems) > 0 {

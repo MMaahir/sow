@@ -1,0 +1,15 @@
+[tasks.dev]
+description = "Run the frontend's dev server, which sends /api to the backend"
+run = "vp dev"
+
+[tasks.test]
+description = "Run the frontend tests once"
+run = "vp test run"
+
+[tasks.lint]
+description = "Check formatting, lint rules and types"
+run = "vp check"
+
+[tasks.build]
+description = "Build the frontend into dist/"
+run = "vp build"
