@@ -13,3 +13,7 @@ run = "vp check"
 [tasks.build]
 description = "Build the frontend into dist/"
 run = "vp build"
+
+[tasks.generate-client]
+description = "Write the API client in src/client.gen.ts from backend/openapi.json"
+run = "pnpm exec orval"

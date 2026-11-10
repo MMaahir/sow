@@ -2,7 +2,7 @@ import { defineConfig } from "vite-plus";
 
 export default defineConfig({
   lint: {
-    ignorePatterns: ["**/dist/**", "**/routeTree.gen.ts"],
+    ignorePatterns: ["**/dist/**", "**/client.gen.ts", "**/routeTree.gen.ts"],
     options: {
       typeAware: true,
       typeCheck: true,
@@ -16,6 +16,12 @@ export default defineConfig({
     ],
   },
   fmt: {
-    ignorePatterns: ["**/dist/**", "**/openapi.json", "**/routeTree.gen.ts", "pnpm-lock.yaml"],
+    ignorePatterns: [
+      "**/dist/**",
+      "**/openapi.json",
+      "**/client.gen.ts",
+      "**/routeTree.gen.ts",
+      "pnpm-lock.yaml",
+    ],
   },
 });
