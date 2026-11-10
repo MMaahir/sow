@@ -1,0 +1,29 @@
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - errorlint
+    - gocritic
+    - misspell
+    - nolintlint
+    - revive
+    - unconvert
+    - unparam
+    - usestdlibvars
+  exclusions:
+    rules:
+      # A test helper keeps a parameter that every current caller happens to
+      # pass the same value for, such as the name of a fake tool.
+      - path: _test\.go
+        linters:
+          - unparam
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/MMaahir/sow

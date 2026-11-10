@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "target": "es2024",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "lib": ["es2024"],
+    "types": ["node"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true
+  },
+  "include": ["scripts", "vite.config.ts"]
+}

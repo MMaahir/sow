@@ -1,0 +1,27 @@
+[tools]
+go = "1.27.3"
+golangci-lint = "2.15.0"
+
+[tasks.build]
+description = "Compile every package"
+run = "go build ./..."
+
+[tasks.fmt]
+description = "Format the Go code"
+run = "golangci-lint fmt"
+
+[tasks.lint]
+description = "Lint the Go code and check its formatting"
+run = "golangci-lint run"
+
+[tasks.test]
+description = "Run the fast tests"
+run = "go test -short ./..."
+
+[tasks.test-health]
+description = "Run every test, including the slow generated project health tests"
+run = "go test ./..."
+
+[tasks.check]
+description = "The gate for every commit: build, lint and fast tests"
+depends = ["build", "lint", "test"]

@@ -1,0 +1,18 @@
+# Working in this project
+
+Use the mise tasks in `mise.toml` when you work in this project. Never call a tool directly when a mise task exists for it. Check your work with `mise run check` before you commit.
+[[- if eq .backend "ts" ]]
+
+## TypeScript
+
+The backend is in `backend/`. Run its tasks from that directory: `mise run dev`, `mise run test`, `mise run lint`, `mise run build` and `mise run openapi`.
+
+Vite+ is the toolchain. Its CLI is `vp`, and it installs Node and pnpm.
+
+- Call `vp` directly only for a command that has no mise task, such as `vp install` or `vp add <package>`. Running a tool through its mise task loads `.env`.
+- Never call `vite`, `vitest`, `oxlint` or `oxfmt` directly.
+- Import test functions from `vite-plus/test`.
+- Relative imports end in `.ts`, because Node runs the source files directly in development.
+- After changing a route, run `mise run openapi` and commit `openapi.json`.
+- After `vite-plus` changes version, run `mise run upgrade-vite-plus` from the root, check the result with `mise run check-vite-plus-pins`, and commit it.
+[[- end ]]

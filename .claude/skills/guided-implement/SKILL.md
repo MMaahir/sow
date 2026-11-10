@@ -1,19 +1,21 @@
 ---
 name: guided-implement
-description: Coach the user through implementing a ticket: you write the tests, the user writes the code. Use when the user asks to go through, work through or pair on a ticket together ("let's go through this ticket together", "walk me through #12"), or asks for help working on a ticket.
+description: Coach the user through implementing an infrastructure ticket: you write the checks, the user writes the files. Use when the user asks to go through, work through or pair on a ticket together ("let's go through this ticket together", "walk me through #12"), or asks for help working on a ticket.
 ---
 
 # Guided implement
 
-This is `/implement` with the roles split: you write the tests, and the user, who is learning, writes every line of source and config to make them pass. You _coach_ the implementation.
+This is `/implement` with the roles split, for the `ready-for-human` tickets (ADR 0013). They cover infrastructure files: workflows, Dockerfiles, Compose files, charts, Terraform, Renovate and release config. You write the checks, and the user, who is learning, writes every line of the infrastructure files to make them pass. You _coach_ the implementation.
+
+A check is whatever proves the file works, and it must fail before the user writes the file. Prefer, in this order: a sow health test that currently skips because the file is missing, a command that validates the file (`actionlint`, `docker build`, `helm lint`, `terraform validate`), and a query of the real result (`gh api` for branch protection, `gh run view` for a workflow run). Where a check needs Go test code, you write it and follow `docs/agents/coding-guide.md`.
 
 Rules for every step:
 
-- Write and fix the test files yourself. Leave source, template and config files to the user. Show patterns in chat; the user types them into the files.
+- Write and fix the checks and any Go test code yourself. Leave the infrastructure files to the user. Show patterns in chat; the user types them into the files.
 - Give the reason with every suggestion: why this test, why this seam, why this change.
 - Take one step, or one beat inside a step, then end your turn and wait for the user.
 - Write every message for a learner: open with a line or two on where you are and what this step is for, then use short sentences with one idea each, define each new concept before you use it, and put what to do in a numbered list.
-- Give docs just in time. When the user is about to act (install a dependency, configure a tool, write a test, make it pass, run a check), link what that action needs, and hold links for later beats until those beats arrive. Give one source per thing they need now, linked to the section rather than the homepage, with a line on what to read there and how it applies. Put each link inline, in the instruction it supports, never in a separate reading section. Prefer the tool's own docs page or section, then the spec or PEP, then one well-regarded blog post where the docs are thin.
+- Give docs just in time. When the user is about to act (install a dependency, configure a tool, write a test, make it pass, run a check), link what that action needs, and hold links for later beats until those beats arrive. Give one source per thing they need now, linked to the section rather than the homepage, with a line on what to read there and how it applies. Put each link inline, in the instruction it supports, never in a separate reading section. Prefer the tool's own docs page or section, then the spec, then one well-regarded blog post where the docs are thin.
 - Open every link with WebFetch before you give it, and confirm it says what you claim. Fetch each page once and check every anchor you need from that one fetch. Keep the verified links in the plan, so later beats reuse them after compaction. Where the docs are silent and you checked the behaviour by experiment, say so.
 - Put every question and decision to the user through the `mattpocock-skills:grilling` skill, in its round format. Write no docs for the answers: no ADR, glossary entry or file. Keep them in the thread and carry each settled answer into the plan.
 
@@ -21,7 +23,7 @@ Rules for every step:
 
 Fetch the ticket as `docs/agents/issue-tracker.md` describes and state its number and title. If any blocker is still open, say which and stop. Read `GLOSSARY.md`, the ADRs the ticket touches, and the roadmap section for its release.
 
-Restate the ticket's acceptance criteria as a checklist. Create a branch off an up-to-date `main`, named `<type>/<issue>-<slug>` with a Conventional Commits type (`feat/12-sow-new`), and record the `main` SHA as the review's fixed point.
+Restate the ticket's acceptance criteria as a checklist. Create a branch off an up-to-date `main`, named `<type>/<issue>-<slug>` with a Conventional Commits type (`ci/12-own-ci`), and record the `main` SHA as the review's fixed point.
 
 Done when the user has the checklist and the branch is checked out.
 
@@ -36,8 +38,8 @@ Done when the grilling frontier is empty and the plan lists the confirmed seams,
 If the user will be offline for the slices, you can't coach them live, so prepare everything before they disconnect:
 
 1. Write the tests for every slice up front, in slice order, and run them to confirm they fail for the right reason.
-2. Prove the tests can pass. Copy the repo to a temp dir, run `uv sync --offline` there so the editable install points at the copy, write a throwaway implementation, and run the suite, linter and type checker. Fix any test that can't go green, then delete the copy. Never put the implementation in the user's checkout.
-3. Write a notes file outside version control (`.notes/<issue>.md`, listed in `.git/info/exclude`). It holds the settled decisions, each slice's tests and the smallest change that makes them pass, the commands to run, and the facts the user would otherwise look up online: quote the docs or cite library source in `.venv` with `file:line`, since links won't open.
+2. Prove the tests can pass. Copy the repo to a temp dir, write a throwaway implementation there, and run the checks and `mise run check`. Fix any test that can't go green, then delete the copy. Never put the implementation in the user's checkout.
+3. Write a notes file outside version control (`.notes/<issue>.md`, listed in `.git/info/exclude`). It holds the settled decisions, each slice's tests and the smallest change that makes them pass, the commands to run, and the facts the user would otherwise look up online: quote the docs, since links won't open.
 4. Then do steps 4–6 once the user is back online.
 
 ## 3. Coach each slice, red then green
@@ -45,10 +47,10 @@ If the user will be offline for the slices, you can't coach them live, so prepar
 For each slice, take these beats in order:
 
 1. **Behaviour.** Say in one sentence what the test proves. Name the independent source of the expected value: a literal, a worked example, or a line of the ticket.
-2. **Test.** Write the test, checked against the `tdd` anti-patterns and its `mocking.md`. Walk the user through its arrange, act and assert, and name the pytest tools it uses (fixtures, `tmp_path`, `parametrize`, Typer's `CliRunner`) with a link to each.
+2. **Test.** Write the test, checked against the `tdd` anti-patterns and its `mocking.md`. Walk the user through its arrange, act and assert, and name the tool it runs with a link to its docs.
 3. **Red.** Run the test and show the failure. Confirm the missing behaviour causes it, rather than a typo or a broken fixture, and explain what the failure tells the user to build.
 4. **Green.** Say where the code goes and what the smallest change is, and link the docs for any dependency, tool setup or library call it needs. When the user is stuck, give more help one rung at a time: the idea, then the doc section, then a short snippet in chat.
-5. **Checks.** The user runs the test file, the type checker and the linter. On a tool's first run, or a failure new to the user, link the docs section for it.
+5. **Checks.** The user runs the check and `mise run check`. On a tool's first run, or a failure new to the user, link the docs section for it.
 6. **Commit.** Suggest a Conventional Commits message for the slice. The user commits the test and the code together.
 
 If the user's code passes but a test turns out to be wrong, fix the test yourself and say what was wrong with it.

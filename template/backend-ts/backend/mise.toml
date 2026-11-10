@@ -1,0 +1,19 @@
+[tasks.dev]
+description = "Run the backend and restart it when a file changes"
+run = "node --watch src/index.ts"
+
+[tasks.test]
+description = "Run the backend tests once"
+run = "vp test run"
+
+[tasks.lint]
+description = "Check formatting, lint rules and types"
+run = "vp check"
+
+[tasks.build]
+description = "Bundle the backend into dist/"
+run = "vp pack"
+
+[tasks.openapi]
+description = "Write the OpenAPI document to openapi.json"
+run = "node scripts/export-openapi.ts"

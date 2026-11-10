@@ -1,3 +1,7 @@
+---
+status: superseded by ADR-0012
+---
+
 # Rules for how the CLI runs Copier
 
 The template uses no Copier tasks, migrations or Jinja extensions. Rendering only writes files, so an update can re-render the old version reliably and nobody needs `--trust`.

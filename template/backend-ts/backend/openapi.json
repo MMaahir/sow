@@ -1,0 +1,63 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "backend",
+    "version": "0.0.0"
+  },
+  "components": {
+    "schemas": {
+      "Status": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok"
+            ]
+          }
+        },
+        "required": [
+          "status"
+        ]
+      }
+    },
+    "parameters": {}
+  },
+  "paths": {
+    "/healthz": {
+      "get": {
+        "summary": "Liveness: the process is running.",
+        "responses": {
+          "200": {
+            "description": "The service is up.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/readyz": {
+      "get": {
+        "summary": "Readiness: the service can take requests.",
+        "responses": {
+          "200": {
+            "description": "The service is up.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "webhooks": {}
+}

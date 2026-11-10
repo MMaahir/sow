@@ -1,0 +1,19 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-yaml
+        # pnpm writes its lockfile as several YAML documents in one file.
+        exclude: ^pnpm-lock\.yaml$
+      - id: check-merge-conflict
+[[- if eq .backend "ts" ]]
+  - repo: local
+    hooks:
+      - id: vp-check
+        name: vp check
+        entry: vp check --fix
+        language: system
+        types_or: [ts, tsx]
+[[- end ]]
