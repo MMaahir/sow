@@ -58,13 +58,28 @@ git push -u origin HEAD
 gh pr create --title "<conventional commit title>" --body-file <file>
 ```
 
-The title becomes the squash commit, so it follows Conventional Commits. The body has these sections:
+The title becomes the squash commit, so it follows Conventional Commits.
 
-- **What changed**, in plain words the author can follow without reading Go.
-- **How to try it**: commands the author can paste to see the behaviour.
-- **Left for the author**: every infrastructure file the change needs and doesn't have, and which checks skip until it exists.
-- **Noticed**: problems you saw outside the ticket and didn't fix.
-- `Closes #<ticket>`
+Write the body with the `mattpocock-skills:pr` skill. If your tools don't have that skill, use its template as written here:
+
+````markdown
+## Summary
+
+<the smallest diagram, tree, pseudocode or diff sketch that shows the change, with a line or two of plain words>
+
+## Evidence
+
+- **Before:** <output or failing test run>
+  **After:** <output or passing test run>
+
+## Merge Danger
+
+**Door:** <one-way or two-way>
+
+**Blast Radius:** <one word, then what could break>
+````
+
+The author doesn't read Go, so the Summary uses plain words and glossary terms. It also lists two things when they apply: each infrastructure file the change needs and doesn't have, with the checks that skip until the author writes it, and any problem you noticed outside the ticket and didn't fix. End the body with `Closes #<ticket>`.
 
 ## 6. Review and merge
 

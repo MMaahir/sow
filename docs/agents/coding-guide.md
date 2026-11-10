@@ -92,7 +92,7 @@ Each rule has a reason. The rule still applies when the reason seems not to.
 16. **Name things after the glossary.** `answers`, `preset`, `component`, `stack`, `followUpStep`. Read `GLOSSARY.md` and never use a word from its "Avoid" lines. Receivers are one letter (`a Answers`, `e Env`). No `utils`, `helpers` or `common` packages or files.
 17. **File modes are `0o755` for directories and `0o644` for files.**
 18. **No `//nolint`.** Fix the code. If a linter is wrong, stop and comment on the ticket.
-19. **Change only what the ticket needs.** Don't rename, reformat or reorganise code the ticket doesn't touch. If you see a problem elsewhere, write it in the PR description under "Noticed".
+19. **Change only what the ticket needs.** Don't rename, reformat or reorganise code the ticket doesn't touch. If you see a problem elsewhere, list it in the PR summary as a noticed problem.
 20. **Don't write code for later tickets.** No unused parameters, options, flags or files "for when we need them".
 
 ## 4. Test rules
@@ -204,7 +204,7 @@ Never create or edit these, in this repo or under `template/` (ADR 0013):
 - Prometheus rules, alert rules and SLO definitions
 - release configuration (release-please, GoReleaser)
 
-If your ticket needs one of them to exist, build everything else, make the dependent test skip (test rule 11), and list the gap in the PR description under "Left for the author".
+If your ticket needs one of them to exist, build everything else, make the dependent test skip (test rule 11), and list the gap in the PR summary.
 
 ## 7. Writing prose
 
