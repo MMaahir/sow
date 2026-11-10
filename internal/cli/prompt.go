@@ -44,33 +44,44 @@ func (p TerminalPrompter) Ask(ctx context.Context, q answers.Question) (string, 
 }
 
 // ask returns the answers the author types for every question that no source
-// answers. Validation happens later in answers.Resolve, as for a flag.
+// answers. It doesn't ask a question whose needed component is off, because
+// that question can only be answered with its default. Validation happens
+// later in answers.Resolve, as for a flag.
 func ask(ctx context.Context, prompter Prompter, sources []answers.Answers) (answers.Answers, error) {
-	var missing []answers.Question
-	for _, q := range answers.Questions() {
-		if !slices.ContainsFunc(sources, func(a answers.Answers) bool { _, ok := a[q.Key]; return ok }) {
-			missing = append(missing, q)
-		}
-	}
 	typed := answers.Answers{}
-	if len(missing) == 0 {
-		return typed, nil
-	}
-	if prompter == nil {
-		keys := make([]string, 0, len(missing))
-		for _, q := range missing {
-			keys = append(keys, q.Key)
+	known := append(slices.Clone(sources), typed)
+	// given returns the answer for key from the sources or from what the
+	// author has typed so far.
+	given := func(key string) (string, bool) {
+		for _, source := range known {
+			if value, ok := source[key]; ok {
+				return value, true
+			}
 		}
-		return nil, fmt.Errorf("stdin isn't a terminal, so sow can't ask for %s: "+
-			"pass --no-input and give answers with flags, a preset or the personal defaults file",
-			strings.Join(keys, ", "))
+		return "", false
 	}
-	for _, q := range missing {
+	var unasked []string
+	for _, q := range answers.Questions() {
+		if _, ok := given(q.Key); ok {
+			continue
+		}
+		if needed, _ := given(q.Needs); needed == answers.None {
+			continue
+		}
+		if prompter == nil {
+			unasked = append(unasked, q.Key)
+			continue
+		}
 		value, err := prompter.Ask(ctx, q)
 		if err != nil {
 			return nil, fmt.Errorf("ask for %s: %w", q.Key, err)
 		}
 		typed[q.Key] = value
+	}
+	if len(unasked) > 0 {
+		return nil, fmt.Errorf("stdin isn't a terminal, so sow can't ask for %s: "+
+			"pass --no-input and give answers with flags, a preset or the personal defaults file",
+			strings.Join(unasked, ", "))
 	}
 	return typed, nil
 }

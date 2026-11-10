@@ -12,8 +12,12 @@ run = [
   "mise --cd backend run lint",
   "mise --cd backend run test",
 [[- end ]]
+[[- if ne .frontend "none" ]]
+  "mise --cd frontend run lint",
+  "mise --cd frontend run test",
+[[- end ]]
 ]
-[[- if eq .backend "ts" ]]
+[[- if or (eq .backend "ts") (eq .frontend "react") ]]
 
 [tasks.check-vite-plus-pins]
 description = "Check that the Vite+ pins in pnpm-workspace.yaml match the installed Vite+"

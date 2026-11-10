@@ -275,6 +275,91 @@ func TestNewBackendTSProjectHealth(t *testing.T) {
 	})
 }
 
+func TestNewFrontendReactProjectHealth(t *testing.T) {
+	s := newHealthSandbox(t, "mise", "vp", "node")
+	s.newProject("--backend", "ts", "--frontend", "react")
+	s.mustTool(".", "mise", "install")
+
+	t.Run("the root check task passes", func(t *testing.T) {
+		s := s.in(t)
+		s.mustTool(".", "mise", "run", "check")
+	})
+
+	t.Run("lint, test and build pass in the frontend", func(t *testing.T) {
+		s := s.in(t)
+		for _, task := range []string{"lint", "test", "build"} {
+			s.mustTool("frontend", "mise", "run", task)
+		}
+		if !s.exists("demo/frontend/dist/index.html") {
+			t.Error("mise run build wrote no frontend/dist/index.html")
+		}
+	})
+
+	t.Run("the Vite+ pin check passes", func(t *testing.T) {
+		s := s.in(t)
+		s.mustTool(".", "mise", "run", "check-vite-plus-pins")
+	})
+
+	t.Run("the working tree is clean after every task", func(t *testing.T) {
+		s := s.in(t)
+		if changed := s.git("status", "--porcelain"); changed != "" {
+			t.Errorf("the tasks left uncommitted files:\n%s", changed)
+		}
+	})
+
+	typeError := "export const wrong: number = \"text\";\n"
+	conditionalHook := `import { useState } from "react";
+
+export function Wrong({ on }: { on: boolean }) {
+  if (on) {
+    const [count] = useState(0);
+    return <p>{count}</p>;
+  }
+  return <p>off</p>;
+}
+`
+	for name, c := range map[string]struct{ file, content, want string }{
+		"a type error in a source file fails lint": {
+			file: "frontend/src/wrong.tsx", content: typeError, want: "TS2322",
+		},
+		"a type error in a test file fails lint": {
+			file: "frontend/src/wrong.test.tsx", content: typeError, want: "TS2322",
+		},
+		"a hook called conditionally fails lint": {
+			file: "frontend/src/wrong.tsx", content: conditionalHook, want: "rules-of-hooks",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s := s.in(t)
+			s.write(s.dir, "demo/"+c.file, c.content)
+			t.Cleanup(func() {
+				if err := os.Remove(filepath.Join(s.dir, "demo", c.file)); err != nil {
+					t.Error(err)
+				}
+			})
+
+			output, err := s.tool("frontend", "mise", "run", "lint")
+
+			if err == nil {
+				t.Fatalf("lint passed despite the problem in %s:\n%s", c.file, output)
+			}
+			wantContains(t, output, filepath.Base(c.file), c.want)
+		})
+	}
+
+	t.Run("the frontend image builds", func(t *testing.T) {
+		s := s.in(t)
+		if !s.exists("demo/frontend/Dockerfile") {
+			t.Skip("frontend/Dockerfile doesn't exist yet: the author writes it")
+		}
+		if _, err := exec.LookPath("docker"); err != nil {
+			t.Skip("docker isn't installed: install it to run this test")
+		}
+
+		s.mustTool("frontend", "docker", "build", ".")
+	})
+}
+
 // freePort returns a TCP port nothing is listening on.
 func freePort(t *testing.T) int {
 	t.Helper()
