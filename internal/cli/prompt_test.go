@@ -103,7 +103,8 @@ func TestNewRejectsAnEmptyGivenAnswerBeforeAsking(t *testing.T) {
 	if got.code != 1 {
 		t.Errorf("exit code = %d, want 1", got.code)
 	}
-	wantContains(t, got.stderr, "user_name can't be empty")
+	wantContains(t, got.stderr,
+		"user_name can't be empty: pass --user-name or set user_name in the personal defaults file")
 	if asked := prompter.askedKeys(); len(asked) != 0 {
 		t.Errorf("sow asked for %v despite the empty user_name", asked)
 	}

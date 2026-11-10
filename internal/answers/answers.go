@@ -105,7 +105,7 @@ func CheckGiven(sources ...Answers) error {
 			value := source[key]
 			switch {
 			case value == "":
-				problems = append(problems, fmt.Errorf("%s can't be empty", q.Key))
+				problems = append(problems, fmt.Errorf("%s can't be empty: %s", q.Key, howToAnswer(q)))
 			case len(q.Choices) > 0 && !slices.Contains(q.Choices, value):
 				problems = append(problems, fmt.Errorf(
 					"%s can't be %q: choose one of %s", q.Key, value, strings.Join(q.Choices, ", ")))
@@ -145,13 +145,8 @@ func Resolve(sources ...Answers) (Answers, error) {
 		// An empty answer from a source is CheckGiven's problem to report.
 		switch {
 		case answered:
-		case value == "" && q.Personal:
-			problems = append(problems, fmt.Errorf(
-				"%s is missing: pass --%s or set %s in the personal defaults file",
-				q.Key, strings.ReplaceAll(q.Key, "_", "-"), q.Key))
 		case value == "":
-			problems = append(problems, fmt.Errorf(
-				"%s is missing: pass --%s", q.Key, strings.ReplaceAll(q.Key, "_", "-")))
+			problems = append(problems, fmt.Errorf("%s is missing: %s", q.Key, howToAnswer(q)))
 		}
 		resolved[q.Key] = value
 	}
@@ -160,6 +155,15 @@ func Resolve(sources ...Answers) (Answers, error) {
 		return nil, errors.Join(problems...)
 	}
 	return resolved, nil
+}
+
+// howToAnswer tells the author where to give the answer to q.
+func howToAnswer(q Question) string {
+	flag := "--" + strings.ReplaceAll(q.Key, "_", "-")
+	if q.Personal {
+		return fmt.Sprintf("pass %s or set %s in the personal defaults file", flag, q.Key)
+	}
+	return "pass " + flag
 }
 
 // Dirs returns the template directories these answers select: "base", then one
