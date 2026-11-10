@@ -33,7 +33,7 @@ depends = ["build", "lint", "test"]
 
 [tasks.docs-build]
 description = "Build the docs site into site/, failing on a broken link"
-run = "zensical build --strict --clean"
+run = "zensical build --strict"
 
 [tasks.docs-serve]
 description = "Serve the docs site locally and rebuild it on each change"
