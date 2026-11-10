@@ -13,7 +13,7 @@ How an agent picks up a ticket, builds it, gets it reviewed and merges it. Any a
 |---|---|
 | `ready-for-agent` | An agent builds it |
 | `ready-for-human` | The author builds it by hand. Agents never touch it (ADR 0013) |
-| `difficulty:hard` | Design choices are left open, or it changes the template format, update logic or a seam. Use the strongest model available |
+| `difficulty:hard` | Design choices are left open, or it changes the template format, update logic or a seam. Read the related ADRs and research notes first, and prototype outside the repo before changing the template |
 | `difficulty:medium` | The design is settled but the ticket touches several packages or needs outside research |
 | `difficulty:easy` | Follows a recipe in the coding guide. A small, fast model can build it |
 
@@ -139,7 +139,7 @@ The author's routing. A session that orchestrates others follows it.
 
 | Work | Model |
 |---|---|
-| `difficulty:hard` tickets, planning, specs, answering review findings | The strongest model (Claude Fable) |
+| `difficulty:hard` tickets, planning, specs, answering review findings | Claude Opus, at medium reasoning effort |
 | `difficulty:medium` tickets | Claude Opus |
 | `difficulty:easy` tickets | GLM-5.3-Flash |
 | Code review | First the model that wrote the code, then GPT-6.1-Sol |
