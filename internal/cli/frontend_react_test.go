@@ -100,7 +100,8 @@ func TestNewFrontendReactSharedFilesCoverBothComponents(t *testing.T) {
 		"mise run check` before you commit.\n\n## TypeScript\n\nThe backend is in `backend/`.",
 		"`mise run build` and `mise run openapi`.\n\nThe frontend is in `frontend/`. Run its tasks from that directory: "+
 			"`mise run dev`, `mise run test`, `mise run lint`, `mise run build` and `mise run generate-client`.\n\nVite+ is the toolchain.",
-		"- Import test functions from `vite-plus/test`.\n- Relative imports in `backend/` end in `.ts`",
+		"- The Vitest tests, in files that end in `.test.ts` or `.test.tsx`, import their test functions from `vite-plus/test`.\n"+
+			"- Relative imports in `backend/` end in `.ts`",
 		"commit `openapi.json`.\n- Routes are files in `frontend/src/routes/`.",
 		"`.test.tsx`.\n- The frontend calls the backend through the client in `frontend/src/client.gen.ts`, "+
 			"which `mise run generate-client` writes from `backend/openapi.json`.",
@@ -117,6 +118,8 @@ func TestNewBackendTSSharedFilesLeaveTheFrontendOut(t *testing.T) {
 		"  \"mise --cd backend run test\",\n]\n\n[tasks.check-vite-plus-pins]\n")
 	wantContains(t, s.read("demo/AGENTS.md"),
 		"`mise run build` and `mise run openapi`.\n\nVite+ is the toolchain.",
+		"`oxfmt` directly.\n- The Vitest tests, in files that end in `.test.ts` or `.test.tsx`, import their test functions from `vite-plus/test`.\n"+
+			"- Relative imports in `backend/` end in `.ts`",
 		"commit `openapi.json`.\n- After `vite-plus` changes version")
 	for _, file := range []string{"demo/mise.toml", "demo/AGENTS.md"} {
 		if strings.Contains(s.read(file), "frontend") {
@@ -147,7 +150,9 @@ run = "pnpm exec playwright test"
 	}
 	wantContains(t, s.read("demo/.gitignore"), "test-results/\n")
 	wantContains(t, s.read("demo/AGENTS.md"),
-		"- The Playwright smoke tests in `frontend/e2e/` run against the running app. Start it, then run `mise run e2e` from the root.")
+		"- The Playwright smoke tests in `frontend/e2e/` run against the running app. Start it, then run `mise run e2e` from the root. "+
+			"The task reads the app's address from `E2E_BASE_URL` in `.env`. "+
+			"These tests import their test functions from `@playwright/test`, never from `vite-plus/test`.\n")
 }
 
 func TestNewFrontendReactSetsTheE2EBaseURL(t *testing.T) {
