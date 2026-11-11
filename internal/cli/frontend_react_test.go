@@ -186,6 +186,26 @@ func TestNewBackendTSHasNoE2ETask(t *testing.T) {
 	}
 }
 
+func TestNewRejectsAnEmptyFrontendWithoutADuplicateBackendProblem(t *testing.T) {
+	s := newSandbox(t)
+	prompter := s.terminal(map[string]string{})
+
+	got := s.run("new", "demo", "--frontend", "", "--backend", "none")
+
+	if got.code != 1 {
+		t.Errorf("exit code = %d, want 1", got.code)
+	}
+	if want := "sow: frontend can't be empty: pass --frontend\n"; got.stderr != want {
+		t.Errorf("stderr = %q, want %q", got.stderr, want)
+	}
+	if asked := prompter.askedKeys(); len(asked) != 0 {
+		t.Errorf("asked %v despite the empty frontend", asked)
+	}
+	if s.exists("demo") {
+		t.Error("sow new created demo despite the empty frontend")
+	}
+}
+
 func TestUpdateRejectsAnAnswersFileWithAFrontendAndNoBackend(t *testing.T) {
 	s := newSandbox(t)
 	file := "sow_version: 1.2.3\nproject_name: demo\nuser_name: Test User\n" +

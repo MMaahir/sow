@@ -131,7 +131,11 @@ func TestNewRefusesToAskWithoutATerminal(t *testing.T) {
 	if got.code != 1 {
 		t.Errorf("exit code = %d, want 1", got.code)
 	}
-	wantContains(t, got.stderr, "isn't a terminal", "--no-input")
+	want := "sow: stdin isn't a terminal, so sow can't ask for backend: " +
+		"pass --no-input and give answers with flags, a preset or the personal defaults file\n"
+	if got.stderr != want {
+		t.Errorf("stderr = %q, want %q", got.stderr, want)
+	}
 	if s.exists("demo") {
 		t.Error("sow new created demo without a terminal or --no-input")
 	}

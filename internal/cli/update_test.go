@@ -66,6 +66,17 @@ func TestUpdateRejectsAnInvalidAnswersFile(t *testing.T) {
 			file: "project_name: demo\n",
 			want: []string{"sow_version is missing"},
 		},
+		"a null document": {
+			file: "null\n",
+			want: []string{
+				"sow_version is missing: set it to the sow version that created the project",
+				"project_name is missing from",
+				"user_name is missing from",
+				"user_email is missing from",
+				"github_user is missing from",
+				"add it with the value the project was created with, commit the file, then run sow update again",
+			},
+		},
 		"an invalid answer": {
 			file: "sow_version: 1.2.3\nproject_name: demo\nbackend: rails\n",
 			want: []string{`backend can't be "rails": choose one of none, ts`},
@@ -93,6 +104,24 @@ func TestUpdateRejectsAnInvalidAnswersFile(t *testing.T) {
 			want: []string{"user_name is missing from", "add it with the value the project was created with"},
 			// The advice for sow new doesn't fit an existing project.
 			absent: []string{"--user-name", "personal defaults file"},
+		},
+		"an empty backend answer": {
+			file: "sow_version: 1.2.3\nproject_name: demo\nuser_name: Test User\n" +
+				"user_email: test@example.com\ngithub_user: test-user\nbackend: \"\"\n",
+			want: []string{
+				"backend is missing from .sow-answers.yml: add it with the value the project was created with, " +
+					"commit the file, then run sow update again",
+			},
+			absent: []string{"--backend"},
+		},
+		"an empty frontend answer": {
+			file: "sow_version: 1.2.3\nproject_name: demo\nuser_name: Test User\n" +
+				"user_email: test@example.com\ngithub_user: test-user\nbackend: none\nfrontend: \"\"\n",
+			want: []string{
+				"frontend is missing from .sow-answers.yml: add it with the value the project was created with, " +
+					"commit the file, then run sow update again",
+			},
+			absent: []string{"--frontend", "frontend needs a backend"},
 		},
 		"a missing answer and an unknown key": {
 			file: "sow_version: 1.2.3\nproject_name: demo\nuser_name: Test User\nuser_email: test@example.com\ndatabse: postgres\n",

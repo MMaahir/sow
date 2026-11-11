@@ -304,7 +304,8 @@ func (a Answers) Dirs() []string {
 // no entry for a component added since, and a template that reads that
 // component's answer needs a value for it.
 func (a Answers) WithComponentsOff() Answers {
-	filled := maps.Clone(a)
+	filled := Answers{}
+	maps.Copy(filled, a)
 	for _, q := range Questions() {
 		if _, ok := filled[q.Key]; q.Component && !ok {
 			filled[q.Key] = None
