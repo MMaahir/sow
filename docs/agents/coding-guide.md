@@ -9,7 +9,7 @@ The ticket says what to build. This guide says how. If they disagree on how, thi
 | Path | What lives there | What never lives there |
 |---|---|---|
 | `cmd/sow/main.go` | Reads the real process (arguments, streams, environment, working directory, build version, whether stdin is a terminal) and calls `cli.Run` | Any logic. Don't add files to `cmd/sow` |
-| `internal/cli/` | One file per command. Flags, argument checks, one call into `internal/project`, and printing its result | File writing, rendering, starting processes, version rules, any decision about the project on disk |
+| `internal/cli/` | One file per command. Flags, argument checks, one call into `internal/project`, and printing its result. `sow new` is the one exception: it also calls `project.CheckTarget` before asking questions, so it never asks about a project it can't create | File writing, rendering, starting processes, version rules, any decision about the project on disk |
 | `internal/answers/` | The questions, presets, validation, the answers file and the personal defaults file | Anything about disk layout of a project |
 | `internal/render/` | Turns template directories and answers into files. Implements the template format in ADR 0012 | Knowledge of specific answers or components |
 | `internal/project/` | Work on a generated project on disk. `New` and `Update` are thin entry points into one pipeline in `pipeline.go`, which runs the checks, the old and new renders, the writes and merges, the answers file, the follow-up steps and git. `tools.go` starts every external command. `steps.go` holds the step type, its runner and the follow-up steps. `github.go` holds the `--github` steps. `version.go` holds the version rules for `sow update` | Flag parsing, printing to the terminal |
@@ -66,9 +66,9 @@ Add one entry to `presets` in `internal/answers/presets.go`, and tests like `Tes
 2. The step runs only if `file` exists in the project, after the files are written. Pick a file the template writes, not one an earlier step creates, because `followUpSteps` checks every file before the first step runs.
 3. `sow new` runs the step before the first commit. `sow update` runs it after the merge, unless the merge left conflicts. Add `newOnly: true` to a step that writes a gitignored file, such as `.env`, because `git reset --hard && git clean -fd` can't undo that change after an update.
 4. If the step can't be one command, write a function shaped like `copyEnvExample` in the same file, `func(ctx context.Context, t *tools) error`, and set `run` to it. `t.dir` is the project root. Start any command in it through `t` (see "Start an external command").
-5. Don't change `runSteps` or the pipeline. A failed step's error names the step, the command, the directory and the steps that didn't finish, and the files stay on disk.
+5. Don't change `runSteps` or the pipeline. A failed step's error names the step and the steps that didn't finish, and the files stay on disk. A `command` step's error also names the command and the directory. A function step like `copyEnvExample` returns its own error, which names the file it was working on.
 6. Test it in `internal/cli/` through the sandbox: the step's effect is on disk, and `git status` is clean after `sow new`. A file the step creates for the local machine only, such as `.env`, is gitignored and stays out of the first commit. A file the project needs, such as the lockfile `vp install` writes, is in the first commit.
-7. Test the failure too: the CLI exits 1, stderr names the step, the command and the directory, and the rendered files are still there.
+7. Test the failure too: the CLI exits 1, stderr names the step, and the rendered files are still there. For a `command` step, stderr also names the command and the directory.
 
 ### Add a `--github` step
 
@@ -102,7 +102,7 @@ Every command `internal/project` starts goes through the `tools` type in `intern
 - `output(ctx, name, args...)` does the same and returns stdout.
 - `exitCode(ctx, highest, name, args...)` returns the exit code when it's from 0 to `highest`, for a command whose exit code is a result, such as `git merge-file`.
 
-Each finds the executable on the `PATH` of its environment and looks it up once, and its error names the command, the directory and the output. Never call `exec.Command` or `exec.LookPath` anywhere else in non-test code, because they read the real process's `PATH`, and never use `os.Environ()`. A step gets its `tools` as the `t` argument of its `run` function.
+Each finds the executable on the `PATH` of its environment and looks it up once. The errors of `run`, `output` and `exitCode` name the command, the directory and the output. The error of `require` names the missing tool and gives the advice. Never call `exec.Command` or `exec.LookPath` anywhere else in non-test code, because they read the real process's `PATH`, and never use `os.Environ()`. A step gets its `tools` as the `t` argument of its `run` function.
 
 To test a command sow starts, call `s.fakeTool("vp", script)` in the sandbox. It puts a shell script with that name first on the sandbox's `PATH`.
 
