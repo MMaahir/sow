@@ -381,3 +381,20 @@ func TestUpdateKeepsAnAnswersFileWithoutALaterComponentReadable(t *testing.T) {
 		t.Errorf(".sow-answers.yml = %q, want no backend entry", file)
 	}
 }
+
+func TestUpdateReadsARelativeSOWRepoFromTheProjectDirectory(t *testing.T) {
+	s := newSandbox(t)
+	s.releasedProject("1.0.0", templateAt100, templateAt123)
+	relative, err := filepath.Rel(filepath.Join(s.dir, "demo"), s.repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.extraEnv = append(s.extraEnv, "SOW_REPO="+relative)
+
+	got := s.runIn("demo", "update")
+
+	if got.code != 0 {
+		t.Errorf("exit code = %d, want 0\n%s", got.code, got.stderr)
+	}
+	wantContains(t, s.read("demo/README.md"), "line four, from sow 1.2.3\n")
+}

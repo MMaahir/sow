@@ -46,7 +46,7 @@ type UpdateOptions struct {
 // sorted. A fetch or render failure leaves the project unchanged. A failure
 // while it changes files leaves the files it changed so far.
 func Update(ctx context.Context, opts UpdateOptions) ([]string, error) {
-	oldTemplate, err := fetchTemplate(ctx, opts.Environ, opts.Repo, opts.CacheDir, opts.From)
+	oldTemplate, err := fetchTemplate(ctx, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -79,16 +79,16 @@ func Update(ctx context.Context, opts UpdateOptions) ([]string, error) {
 }
 
 // fetchTemplate returns the directory that holds the template of release
-// version, fetching it from repo into cacheDir if it isn't there. A release
-// tag never moves, so a cached template never goes stale.
+// opts.From, fetching it from opts.Repo into opts.CacheDir if it isn't there. A
+// release tag never moves, so a cached template never goes stale.
 //
 // It clones only the tagged commit, with no history, and keeps only its
 // template/ directory. It clones into a temporary directory and renames the
 // template into place, so an interrupted fetch never leaves a partial
 // template in the cache.
-func fetchTemplate(ctx context.Context, environ []string, repo, cacheDir, version string) (string, error) {
-	tag := "v" + version
-	templates := filepath.Join(cacheDir, "templates")
+func fetchTemplate(ctx context.Context, opts UpdateOptions) (string, error) {
+	tag := "v" + opts.From
+	templates := filepath.Join(opts.CacheDir, "templates")
 	cached := filepath.Join(templates, tag)
 	if _, err := os.Stat(cached); err == nil {
 		return cached, nil
@@ -101,25 +101,27 @@ func fetchTemplate(ctx context.Context, environ []string, repo, cacheDir, versio
 	if err != nil {
 		return "", fmt.Errorf("create the cache: %w", err)
 	}
-	err = cacheTemplate(ctx, environ, repo, tag, clone, cached)
+	err = cacheTemplate(ctx, opts, tag, clone, cached)
 	if removeErr := os.RemoveAll(clone); removeErr != nil {
 		err = errors.Join(err, fmt.Errorf("remove the clone: %w", removeErr))
 	}
 	if err != nil {
-		return "", fmt.Errorf("fetch the template of sow %s from %s: %w", version, repo, err)
+		return "", fmt.Errorf("fetch the template of sow %s from %s: %w", opts.From, opts.Repo, err)
 	}
 	return cached, nil
 }
 
-// cacheTemplate clones the commit that tag names from repo into clone and
-// moves its template/ directory to cached.
+// cacheTemplate clones the commit that tag names from opts.Repo into clone
+// and moves its template/ directory to cached. git runs in the project
+// root, where the author runs sow update, so a relative SOW_REPO resolves
+// from there.
 //
 // "git clone --depth 1 --branch <tag>" asks the server for that one commit
 // and its files, with no history and no other branches or tags, in one
 // command. The fetch is the size of one checkout of sow.
-func cacheTemplate(ctx context.Context, environ []string, repo, tag, clone, cached string) error {
-	err := run(ctx, environ, clone, "git", "clone", "--quiet", "--depth", "1", "--branch", tag,
-		"--", repo, ".")
+func cacheTemplate(ctx context.Context, opts UpdateOptions, tag, clone, cached string) error {
+	err := run(ctx, opts.Environ, opts.Dir, "git", "clone", "--quiet", "--depth", "1", "--branch", tag,
+		"--", opts.Repo, clone)
 	if err != nil {
 		return fmt.Errorf("check that the tag %s exists and the repo is reachable, "+
 			"or set SOW_REPO to a clone of sow that has the tag: %w", tag, err)
