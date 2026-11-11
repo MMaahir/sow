@@ -39,14 +39,14 @@ gh issue list --state open --label ready-for-agent \
 ## 3. Prepare
 
 1. Read `AGENTS.md`, `docs/agents/coding-guide.md`, `GLOSSARY.md`, the ticket's parent spec, and each ADR the ticket or spec names.
-2. Run `mise install`, then `mise run check` on `main`. If it fails before you change anything, stop and report it.
+2. Run `mise install`, `pre-commit install`, then `mise run check` on `main`. If it fails before you change anything, stop and report it.
 3. Branch from an up-to-date `main`: `git switch -c <type>/<issue>-<slug> origin/main`, for example `feat/41-always-on-files`. The type is a Conventional Commits type.
 
 ## 4. Build
 
 1. Turn the acceptance criteria into a list of behaviours. Order them so each one builds on the last.
 2. For each behaviour, follow "Red, then green" in the coding guide: one failing test, the smallest code that passes, `mise run check`.
-3. Commit after each behaviour that passes. Messages follow Conventional Commits: `feat: reject an unknown preset`.
+3. Commit after each behaviour that passes. Stage the files you changed by name (`git add internal/cli/new.go`). Other agents and the author write files into the same checkout, so `git add -A` and `git add .` can commit work that isn't yours. Messages follow Conventional Commits: `feat: reject an unknown preset`.
 4. When every criterion is met, go through "Before you commit" in the coding guide one more time.
 
 If you can't meet a criterion, don't fake it and don't weaken the test. Stop, and write a handoff comment (section 7).
@@ -147,7 +147,16 @@ The author's routing. A session that orchestrates others follows it.
 
 When a stronger model hands an easy ticket to a smaller one, the brief is the ticket number plus "follow `docs/agents/workflow.md`". Don't restate the ticket. If the ticket isn't clear enough for that, fix the ticket.
 
-## 9. Writing tickets
+## 9. Orchestrated tickets
+
+A session that builds several tickets at once, as the `implement-spec` skill describes, hands each ticket to a separate agent. The agent's brief names the ticket, the integration branch and "orchestrated mode", plus anything specific to that ticket. Orchestrated mode changes sections 3 to 6 like this:
+
+- **Branch.** Start from the tip of the integration branch the brief names, not `main`: `git fetch origin && git switch -c <type>/<issue>-<slug> origin/<integration branch>`.
+- **Health tests.** If the TypeScript health tests need a `vp` and the machine has none, the brief gives a `PATH` to use. Without one, `mise run test-health` fails on the missing tool. Report that, and don't count the run as passing.
+- **Review and merge.** Do step 1 of section 6, the self-review, and put its result in your report instead of a PR comment. Don't open a PR, don't ask another model to review, and don't merge. The orchestrator does those.
+- **Finish.** Commit, push the branch, then send the report as your last message, after the push has finished. The report gives the branch, the commit hashes, each acceptance criterion with the test that covers it, the self-review result, every decision the ticket left open, and anything you couldn't do.
+
+## 10. Writing tickets
 
 A ticket a small model can build has all of these:
 
@@ -156,3 +165,5 @@ A ticket a small model can build has all of these:
 - The recipe in the coding guide it follows, by name. If no recipe fits, the ticket is `difficulty:medium` or harder.
 - Its blockers, and which of them are the author's.
 - No file paths or code that will go stale, except names the criteria depend on.
+
+When an ADR or the roadmap changes a decision, search the open issues for the old wording in the same PR (`gh issue list --state open --search "<old term>"`) and update every ticket that relies on it. Tickets are written ahead of time, and a stale one sends an agent to build the old decision.

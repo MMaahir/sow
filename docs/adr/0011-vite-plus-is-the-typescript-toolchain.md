@@ -55,4 +55,3 @@ The prototype for the first TypeScript stack ran on Vite+ 1.5.1 and changed thre
 - The pins live in the `catalog` block of `pnpm-workspace.yaml`, because that's where `vp migrate` now writes them. Each `package.json` says `"vite-plus": "catalog:"`, and the `vite` override is `vite@*: "catalog:"`. Renovate bumps the `vite-plus` catalog entry, and `mise run upgrade-vite-plus` re-pins the alias. The pin check compares the catalog with `vp toolchain --json`.
 - There's no `vitest` override while no package depends on `vitest` or `@vitest/*` directly, because `vite-plus` already depends on one exact Vitest. The override and its check return when a package adds such a dependency.
 - The `test` task runs `vp test run`. Plain `vp test` watches for changes when it runs in a terminal.
-
