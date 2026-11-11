@@ -59,6 +59,7 @@ func Run(ctx context.Context, args []string, env Env) int {
 	root.SetOut(env.Stdout)
 	root.SetErr(env.Stderr)
 	root.AddCommand(newCommand(env))
+	root.AddCommand(updateCommand(env))
 
 	if err := root.ExecuteContext(ctx); err != nil {
 		_, _ = fmt.Fprintf(env.Stderr, "sow: %v\n", err)

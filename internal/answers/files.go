@@ -43,6 +43,22 @@ func Marshal(version string, a Answers) ([]byte, error) {
 	return out.Bytes(), nil
 }
 
+// Read reads the answers file at path and returns the sow version it records
+// and its answers.
+func Read(path string) (string, Answers, error) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return "", nil, fmt.Errorf("read the answers file: %w", err)
+	}
+	recorded := Answers{}
+	if err := yaml.Unmarshal(content, &recorded); err != nil {
+		return "", nil, fmt.Errorf("read the answers file %s: %w", path, err)
+	}
+	version := recorded[versionKey]
+	delete(recorded, versionKey)
+	return version, recorded, nil
+}
+
 // ReadPersonalDefaults reads the personal defaults file at path. A missing
 // file gives no answers and no error. A key that isn't a personal default is
 // an error, so a typo doesn't go unnoticed. The error lists every such key.
