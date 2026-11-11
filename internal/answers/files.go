@@ -44,7 +44,14 @@ func Marshal(version string, a Answers) ([]byte, error) {
 }
 
 // Read reads the answers file at path and returns the sow version it records
-// and its answers.
+// and its answers. It checks the answers with CheckGiven, the check sow new
+// uses. The returned error wraps fs.ErrNotExist when the file is missing and
+// names the file when it isn't valid YAML. Otherwise it lists every problem
+// with the contents: a missing sow_version, an unknown key and an invalid
+// answer.
+//
+// A question the file doesn't answer isn't a problem, because an answers file
+// written by an older release has no entry for a component added since.
 func Read(path string) (string, Answers, error) {
 	content, err := os.ReadFile(path)
 	if err != nil {
