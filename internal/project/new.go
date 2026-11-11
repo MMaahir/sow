@@ -2,6 +2,7 @@
 package project
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -96,7 +97,9 @@ func run(ctx context.Context, environ []string, dir, name string, args ...string
 }
 
 // output starts a command in dir like run does, and returns what the command
-// printed to stdout and stderr.
+// printed to stdout. It leaves stderr out, because a command such as git
+// prints warnings there that would corrupt output a caller parses. The error
+// carries both.
 func output(ctx context.Context, environ []string, dir, name string, args ...string) (string, error) {
 	executable, err := lookPath(environ, name)
 	if err != nil {
@@ -105,12 +108,14 @@ func output(ctx context.Context, environ []string, dir, name string, args ...str
 	cmd := exec.CommandContext(ctx, executable, args...)
 	cmd.Dir = dir
 	cmd.Env = environ
-	printed, err := cmd.CombinedOutput()
-	if err != nil {
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
 		return "", fmt.Errorf("%s %s failed in %s: %w\n%s",
-			name, strings.Join(args, " "), dir, err, strings.TrimSpace(string(printed)))
+			name, strings.Join(args, " "), dir, err, strings.TrimSpace(stdout.String()+"\n"+stderr.String()))
 	}
-	return string(printed), nil
+	return stdout.String(), nil
 }
 
 // lookPath returns the absolute path of the executable called name, found in

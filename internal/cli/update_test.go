@@ -3,6 +3,7 @@ package cli_test
 import (
 	"maps"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -653,6 +654,25 @@ func TestUpdateReadsARelativeSOWRepoFromTheProjectDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.extraEnv = append(s.extraEnv, "SOW_REPO="+relative)
+
+	got := s.runIn("demo", "update")
+
+	if got.code != 0 {
+		t.Errorf("exit code = %d, want 0\n%s", got.code, got.stderr)
+	}
+	wantContains(t, s.read("demo/README.md"), "line four, from sow 1.2.3\n")
+}
+
+func TestUpdateIgnoresAGitWarningWhenItChecksForLocalChanges(t *testing.T) {
+	s := newSandbox(t)
+	s.releasedProject("1.0.0", templateAt100, templateAt123)
+	s.isolatePath()
+	realGit, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.fakeTool("git", `if [ "$1" = status ]; then echo "warning: unable to access attributes" >&2; fi
+exec "`+realGit+`" "$@"`)
 
 	got := s.runIn("demo", "update")
 
