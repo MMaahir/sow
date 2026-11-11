@@ -18,6 +18,7 @@ func newCommand(env Env) *cobra.Command {
 	var (
 		preset  string
 		noInput bool
+		github  bool
 	)
 	cmd := &cobra.Command{
 		Use:   "new <name>",
@@ -28,6 +29,8 @@ func newCommand(env Env) *cobra.Command {
 		"a named set of answers: "+strings.Join(answers.PresetNames(), ", "))
 	cmd.Flags().BoolVar(&noInput, "no-input", false,
 		"never ask questions; fail if an answer is missing")
+	cmd.Flags().BoolVar(&github, "github", false,
+		"create a public GitHub repo with gh, protect main and push the first commit")
 	for _, q := range answers.Questions() {
 		if q.Key != answers.ProjectName {
 			cmd.Flags().String(flagName(q.Key), "", q.Help)
@@ -78,6 +81,7 @@ func newCommand(env Env) *cobra.Command {
 			Version:  env.Version,
 			Template: sow.Template(),
 			Environ:  env.Environ,
+			GitHub:   github,
 		})
 	}
 	return cmd

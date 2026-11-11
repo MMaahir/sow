@@ -241,3 +241,59 @@ func wantContains(t *testing.T, text string, parts ...string) {
 		}
 	}
 }
+
+// fakeGH puts a fake gh CLI on the sandbox's PATH and a bare repo in the
+// sandbox where git pushes in place of GitHub. It returns the bare repo's
+// path.
+//
+// The fake appends each call's arguments to a file that ghCalls reads, and
+// prefixes each with "before push" or "after push", which it reads from the
+// bare repo. "auth status" passes, and every other call succeeds unless its
+// arguments contain failOn, when it prints an error and exits 1. An empty
+// failOn never fails.
+//
+// The sandbox's git config sends https://github.com/ to the sandbox, so sow
+// adds the real URL as the remote and the push still stays on the machine.
+func (s *sandbox) fakeGH(failOn string) string {
+	s.t.Helper()
+	remotes := filepath.Join(s.home, "github")
+	bare := filepath.Join(remotes, "test-user", "demo.git")
+	s.write(s.home, "gitconfig", "[url \""+remotes+"/\"]\n\tinsteadOf = https://github.com/\n")
+	cmd := exec.CommandContext(s.t.Context(), "git", "init", "--bare", "--quiet", "--initial-branch", "main", bare)
+	cmd.Env = s.environ()
+	if output, err := cmd.CombinedOutput(); err != nil {
+		s.t.Fatalf("git init --bare: %v\n%s", err, output)
+	}
+	s.fakeTool("gh", `when="before push"
+git --git-dir "`+bare+`" rev-parse --verify --quiet refs/heads/main >/dev/null && when="after push"
+echo "$when: $*" >> "`+s.ghCallsPath()+`"
+case "$*" in
+"auth status"*) exit 0 ;;
+esac
+if [ -n "`+failOn+`" ]; then
+  case "$*" in
+  *"`+failOn+`"*) echo "HTTP 403: Resource not accessible" >&2; exit 1 ;;
+  esac
+fi
+exit 0`)
+	return bare
+}
+
+// ghCallsPath is the file where the fake gh records its calls.
+func (s *sandbox) ghCallsPath() string {
+	return filepath.Join(s.home, "gh-calls")
+}
+
+// ghCalls returns the calls the fake gh recorded, one per line, or nothing if
+// gh never ran.
+func (s *sandbox) ghCalls() []string {
+	s.t.Helper()
+	content, err := os.ReadFile(s.ghCallsPath())
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		s.t.Fatal(err)
+	}
+	return strings.Split(strings.TrimSuffix(string(content), "\n"), "\n")
+}

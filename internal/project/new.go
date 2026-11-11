@@ -27,16 +27,26 @@ type Options struct {
 	Template fs.FS
 	// Environ is the environment for the commands New starts.
 	Environ []string
+	// GitHub puts the project on GitHub after the first commit, in the repo
+	// <github_user>/<project_name>.
+	GitHub bool
 }
 
 // New renders the template into opts.Dir, runs the follow-up steps and makes
 // the first commit. When the answers turn on a TypeScript component, it first
-// checks that Vite+ is installed and set up. It checks and renders everything
-// before it writes anything, so a failed check or a template error leaves no
-// directory behind.
+// checks that Vite+ is installed and set up. With opts.GitHub, it first checks
+// that gh is installed and logged in, and after the first commit it creates
+// and protects the GitHub repo and pushes main. It checks and renders
+// everything before it writes anything, so a failed check or a template error
+// leaves no directory behind.
 func New(ctx context.Context, opts Options) error {
 	if _, err := os.Lstat(opts.Dir); !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("%s already exists", filepath.Base(opts.Dir))
+	}
+	if opts.GitHub {
+		if err := checkGitHub(ctx, opts.Environ, filepath.Dir(opts.Dir)); err != nil {
+			return err
+		}
 	}
 	if opts.Answers.TypeScriptOn() {
 		if err := checkViteplus(ctx, opts.Environ, filepath.Dir(opts.Dir)); err != nil {
@@ -71,7 +81,10 @@ func New(ctx context.Context, opts Options) error {
 			return err
 		}
 	}
-	return nil
+	if !opts.GitHub {
+		return nil
+	}
+	return publish(ctx, opts.Environ, opts.Dir, opts.Answers["github_user"], opts.Answers[answers.ProjectName])
 }
 
 // run starts a command in dir and waits for it. On failure the error names
