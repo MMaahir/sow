@@ -64,6 +64,20 @@ func TestUpdateRejectsAnInvalidAnswersFile(t *testing.T) {
 				`backend can't be "rails": choose one of none, ts`,
 			},
 		},
+		"only sow_version": {
+			file: "sow_version: 1.2.3\n",
+			want: []string{
+				"project_name is missing from",
+				"user_name is missing from",
+				"user_email is missing from",
+				"github_user is missing from",
+				"add it with the value the project was created with",
+			},
+		},
+		"a missing answer and an unknown key": {
+			file: "sow_version: 1.2.3\nproject_name: demo\nuser_name: Test User\nuser_email: test@example.com\ndatabse: postgres\n",
+			want: []string{"github_user is missing from", "databse is not an answer sow knows"},
+		},
 		"invalid YAML": {
 			file: "sow_version: 1.2.3\nproject_name: [demo\n",
 			want: []string{"read the answers file", ".sow-answers.yml"},
@@ -89,7 +103,8 @@ func TestUpdateRejectsAnInvalidAnswersFile(t *testing.T) {
 
 func TestUpdateAcceptsAnAnswersFileWithoutALaterComponent(t *testing.T) {
 	s := newSandbox(t)
-	s.write(s.dir, "demo/.sow-answers.yml", "sow_version: 1.2.3\nproject_name: demo\n")
+	s.write(s.dir, "demo/.sow-answers.yml", "sow_version: 1.2.3\nproject_name: demo\n"+
+		"user_name: Test User\nuser_email: test@example.com\ngithub_user: test-user\n")
 
 	got := s.runIn("demo", "update")
 
