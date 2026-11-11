@@ -112,7 +112,7 @@ func TestUpdateRejectsAnInvalidAnswersFile(t *testing.T) {
 				"backend is missing from .sow-answers.yml: add it with the value the project was created with, " +
 					"commit the file, then run sow update again",
 			},
-			absent: []string{"--backend"},
+			absent: []string{"--"},
 		},
 		"an empty frontend answer": {
 			file: "sow_version: 1.2.3\nproject_name: demo\nuser_name: Test User\n" +
@@ -121,7 +121,7 @@ func TestUpdateRejectsAnInvalidAnswersFile(t *testing.T) {
 				"frontend is missing from .sow-answers.yml: add it with the value the project was created with, " +
 					"commit the file, then run sow update again",
 			},
-			absent: []string{"--frontend", "frontend needs a backend"},
+			absent: []string{"--", "frontend needs a backend"},
 		},
 		"a missing answer and an unknown key": {
 			file: "sow_version: 1.2.3\nproject_name: demo\nuser_name: Test User\nuser_email: test@example.com\ndatabse: postgres\n",
