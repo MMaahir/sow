@@ -681,3 +681,44 @@ exec "`+realGit+`" "$@"`)
 	}
 	wantContains(t, s.read("demo/README.md"), "line four, from sow 1.2.3\n")
 }
+
+func TestUpdateReadsTheOldTemplateWithoutTheAuthorsCheckoutFilters(t *testing.T) {
+	s := newSandbox(t)
+	s.releasedProject("1.0.0", templateAt100, templateAt123)
+	s.edit("demo/README.md", func(readme string) string {
+		return strings.Replace(readme, "line one\n", "line one, mine\n", 1)
+	})
+	s.commit()
+	// A smudge filter that turns the old template's README into the author's
+	// edit. If sow checked the release out, the edit would look unedited.
+	s.write(s.home, "attributes", "*.tmpl filter=mine\n")
+	s.write(s.home, "gitconfig", "[core]\n\tattributesFile = "+filepath.Join(s.home, "attributes")+
+		"\n[filter \"mine\"]\n\tsmudge = sed 's/line one$/line one, mine/'\n\tclean = cat\n")
+
+	got := s.runIn("demo", "update")
+
+	if got.code != 0 {
+		t.Errorf("exit code = %d, want 0\n%s", got.code, got.stderr)
+	}
+	want := "# demo\n\nline one, mine\nline two\nline three\nline four, from sow 1.2.3\nline five\n"
+	if got := s.read("demo/README.md"); got != want {
+		t.Errorf("README.md = %q, want %q", got, want)
+	}
+}
+
+func TestUpdateRefusesABranchNamedLikeTheRecordedTag(t *testing.T) {
+	s := newSandbox(t)
+	s.releasedProject("1.0.0", templateAt100, templateAt123)
+	s.gitIn(s.repo, "tag", "--delete", "v1.0.0")
+	s.gitIn(s.repo, "branch", "v1.0.0")
+
+	got := s.runIn("demo", "update")
+
+	if got.code != 1 {
+		t.Errorf("exit code = %d, want 1", got.code)
+	}
+	wantContains(t, got.stderr, "v1.0.0", "SOW_REPO")
+	if got := s.git("status", "--porcelain"); got != "" {
+		t.Errorf("sow update changed the project:\n%s", got)
+	}
+}
