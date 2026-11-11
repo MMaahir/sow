@@ -143,6 +143,15 @@ func TestUpdateRefusesAVersionItCantRender(t *testing.T) {
 			cli:      "1.9.0",
 			want:     []string{"1.10.0", "newer than this sow", "upgrade sow"},
 		},
+		"a released project with a development build of sow": {
+			recorded: "1.0.0",
+			cli:      "0.0.0-dev",
+			want: []string{
+				"this sow is a development build",
+				"a release build of sow at 1.0.0 or later",
+				"go install github.com/MMaahir/sow/cmd/sow@v1.0.0",
+			},
+		},
 		"a word": {
 			recorded: "latest",
 			cli:      "1.2.3",

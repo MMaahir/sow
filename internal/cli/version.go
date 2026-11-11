@@ -11,7 +11,7 @@ import (
 // checkRenderable returns an error when sow update can't render the template
 // at recorded, the project's sow_version, with a sow at version current. It
 // can render only a release that isn't newer than current, because the old
-// render comes from the release's tag. The error names the project by its
+// render comes from the release's tag, and only when current is a release. The error names the project by its
 // project_name, project.
 func checkRenderable(project, recorded, current string) error {
 	if recorded == DevVersion {
@@ -25,9 +25,15 @@ func checkRenderable(project, recorded, current string) error {
 			"set it to the sow release that created the project, such as 0.1.0",
 			project, recorded, answers.FileName)
 	}
-	// A development build of sow isn't a release, so it counts as 0.0.0 and
-	// every release is newer than it.
-	installed, _ := parseRelease(current)
+	// A development build of sow has no release, so it has no template to
+	// render as the new one and can't compare its version with the project's.
+	installed, ok := parseRelease(current)
+	if !ok {
+		return fmt.Errorf("this sow is a development build (%s), and sow update needs a release build of sow "+
+			"at %s or later to update %s: install one with go install github.com/MMaahir/sow/cmd/sow@v%s, "+
+			"then run sow update again",
+			current, recorded, project, recorded)
+	}
 	for i := range old {
 		if old[i] < installed[i] {
 			return nil
