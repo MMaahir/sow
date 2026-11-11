@@ -53,12 +53,19 @@ func newSandbox(t *testing.T) *sandbox {
 // run executes sow in the sandbox's working directory.
 func (s *sandbox) run(args ...string) result {
 	s.t.Helper()
+	return s.runIn(".", args...)
+}
+
+// runIn executes sow in dir, a directory inside the working directory such as
+// "demo".
+func (s *sandbox) runIn(dir string, args ...string) result {
+	s.t.Helper()
 	var stdout, stderr bytes.Buffer
 	env := cli.Env{
 		Stdin:   strings.NewReader(""),
 		Stdout:  &stdout,
 		Stderr:  &stderr,
-		Dir:     s.dir,
+		Dir:     filepath.Join(s.dir, filepath.FromSlash(dir)),
 		Environ: s.environ(),
 		Version: testVersion,
 	}
