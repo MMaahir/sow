@@ -1,4 +1,4 @@
-package cli
+package project
 
 import (
 	"fmt"
@@ -7,6 +7,11 @@ import (
 
 	"github.com/MMaahir/sow/internal/answers"
 )
+
+// DevVersion is the version of a sow binary that wasn't built from a release
+// tag. No release has its template, so a project at DevVersion can't be
+// updated.
+const DevVersion = "0.0.0-dev"
 
 // checkRenderable returns an error when sow update can't render the template
 // at recorded, the project's sow_version, with a sow at version current. It

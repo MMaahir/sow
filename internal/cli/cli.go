@@ -10,10 +10,12 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"github.com/MMaahir/sow/internal/project"
 )
 
 // DevVersion is the version of a binary that wasn't built from a release tag.
-const DevVersion = "0.0.0-dev"
+const DevVersion = project.DevVersion
 
 // Env is everything a command takes from outside the process. Commands never
 // read os.Stdin, os.Getenv or the working directory directly, so a test can

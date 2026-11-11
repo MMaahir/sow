@@ -2,18 +2,14 @@
 package project
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strings"
 
 	"github.com/MMaahir/sow/internal/answers"
-	"github.com/MMaahir/sow/internal/render"
 )
 
 // Options describes the project that New creates.
@@ -39,112 +35,26 @@ type Options struct {
 // that gh is installed and logged in, and after the first commit it creates
 // and protects the GitHub repo and pushes main. It checks and renders
 // everything before it writes anything, so a failed check or a template error
-// leaves no directory behind.
+// leaves no directory behind. It returns the error of CheckTarget when
+// opts.Dir exists.
 func New(ctx context.Context, opts Options) error {
-	if _, err := os.Lstat(opts.Dir); !errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("%s already exists", filepath.Base(opts.Dir))
-	}
-	var remote string
-	if opts.GitHub {
-		var err error
-		remote, err = checkGitHub(ctx, opts.Environ, filepath.Dir(opts.Dir),
-			opts.Answers["github_user"], opts.Answers[answers.ProjectName])
-		if err != nil {
-			return err
-		}
-	}
-	if opts.Answers.TypeScriptOn() {
-		if err := checkViteplus(ctx, opts.Environ, filepath.Dir(opts.Dir)); err != nil {
-			return err
-		}
-	}
-
-	files, err := render.Render(opts.Template, opts.Answers.Dirs(), opts.Answers)
-	if err != nil {
-		return err
-	}
-	answersFile, err := answers.Marshal(opts.Version, opts.Answers)
-	if err != nil {
-		return err
-	}
-	files = append(files, render.File{Path: answers.FileName, Content: answersFile})
-
-	if err := render.Write(opts.Dir, files); err != nil {
-		return fmt.Errorf("write the project: %w", err)
-	}
-
-	if err := runFollowUpSteps(ctx, opts.Environ, opts.Dir, false); err != nil {
-		return err
-	}
-
-	for _, args := range [][]string{
-		{"init", "--initial-branch", "main"},
-		{"add", "--all"},
-		{"commit", "--message", "chore: initial commit from sow"},
-	} {
-		if err := run(ctx, opts.Environ, opts.Dir, "git", args...); err != nil {
-			return err
-		}
-	}
-	if !opts.GitHub {
-		return nil
-	}
-	return publish(ctx, opts.Environ, opts.Dir, opts.Answers["github_user"], opts.Answers[answers.ProjectName], remote)
-}
-
-// run starts a command in dir and waits for it. On failure the error names
-// the command and its directory and carries the command's output, so the
-// author can run it again by hand.
-func run(ctx context.Context, environ []string, dir, name string, args ...string) error {
-	_, err := output(ctx, environ, dir, name, args...)
+	_, err := pipeline{
+		dir:      opts.Dir,
+		environ:  opts.Environ,
+		to:       opts.Version,
+		wanted:   opts.Answers,
+		template: opts.Template,
+		github:   opts.GitHub,
+	}.run(ctx)
 	return err
 }
 
-// output starts a command in dir like run does, and returns what the command
-// printed to stdout. It leaves stderr out, because a command such as git
-// prints warnings there that would corrupt output a caller parses. The error
-// carries both.
-func output(ctx context.Context, environ []string, dir, name string, args ...string) (string, error) {
-	executable, err := lookPath(environ, name)
-	if err != nil {
-		return "", fmt.Errorf("%s %s failed in %s: %w", name, strings.Join(args, " "), dir, err)
+// CheckTarget returns an error when dir, the directory of a new project,
+// already exists, because New creates a project only in a new directory. Call
+// it before asking the author questions for a project New would refuse.
+func CheckTarget(dir string) error {
+	if _, err := os.Lstat(dir); !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("%s already exists", filepath.Base(dir))
 	}
-	cmd := exec.CommandContext(ctx, executable, args...)
-	cmd.Dir = dir
-	cmd.Env = environ
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("%s %s failed in %s: %w\n%s",
-			name, strings.Join(args, " "), dir, err, strings.TrimSpace(stdout.String()+"\n"+stderr.String()))
-	}
-	return stdout.String(), nil
-}
-
-// lookPath returns the absolute path of the executable called name, found in
-// the PATH of environ. The standard exec.LookPath reads the real process's
-// PATH, which would ignore the environment sow was given.
-//
-// It skips PATH entries that aren't absolute. A relative entry means a
-// different directory to the command than to sow, because the command runs in
-// the project directory.
-func lookPath(environ []string, name string) (string, error) {
-	var pathList string
-	for _, entry := range environ {
-		if value, ok := strings.CutPrefix(entry, "PATH="); ok {
-			pathList = value
-		}
-	}
-	for _, dir := range filepath.SplitList(pathList) {
-		if !filepath.IsAbs(dir) {
-			continue
-		}
-		candidate := filepath.Join(dir, name)
-		info, err := os.Stat(candidate)
-		if err == nil && info.Mode().IsRegular() && info.Mode().Perm()&0o111 != 0 {
-			return candidate, nil
-		}
-	}
-	return "", fmt.Errorf("%s isn't installed, or isn't on PATH", name)
+	return nil
 }

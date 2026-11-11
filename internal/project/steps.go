@@ -7,69 +7,93 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
-// followUpStep is one thing sow does in a project after it writes the files,
-// such as copying .env.example to .env. A step runs only if its file exists.
-type followUpStep struct {
-	// name says what the step does. It prefixes the error when the step fails.
+// step is one thing sow does in a project, such as installing the
+// dependencies or creating the GitHub repo. runSteps runs a list of them.
+type step struct {
+	// name says what the step does. The error names the step when it fails.
 	name string
-	// file is a path relative to the project root. The step runs only if this
-	// file exists.
-	file string
-	// run does the step's work in the project directory.
-	run func(ctx context.Context, dir string, environ []string) error
-	// newOnly marks a step that sow new runs and sow update skips, such as one
-	// that writes a gitignored file. git reset --hard && git clean -fd can't
-	// undo a change to a gitignored file, so an update never makes one
-	// (ADR 0012).
-	newOnly bool
+	// run does the step's work. t starts commands in the project directory.
+	run func(ctx context.Context, t *tools) error
 }
 
-// followUpSteps returns the follow-up steps in the order they run.
-func followUpSteps() []followUpStep {
-	return []followUpStep{
-		{
-			name:    "copy .env.example to .env",
-			file:    ".env.example",
-			run:     copyEnvExample,
-			newOnly: true,
-		},
-		{
-			name: "install the dependencies",
-			file: "pnpm-workspace.yaml",
-			run:  installDependencies,
-		},
+// command returns a step's run that starts the command name with args in the
+// project directory.
+func command(name string, args ...string) func(context.Context, *tools) error {
+	return func(ctx context.Context, t *tools) error {
+		return t.run(ctx, name, args...)
 	}
 }
 
-// runFollowUpSteps runs each follow-up step whose file exists in dir, in
-// order, and stops at the first error. For an update, it skips the steps
-// marked newOnly. A failure leaves the written files in place, so the author
-// can fix the cause and run the command again.
-func runFollowUpSteps(ctx context.Context, environ []string, dir string, update bool) error {
-	for _, step := range followUpSteps() {
-		if update && step.newOnly {
-			continue
-		}
-		_, err := os.Stat(filepath.Join(dir, step.file))
-		if errors.Is(err, fs.ErrNotExist) {
-			continue
-		}
-		if err != nil {
-			return err
-		}
-		if err := step.run(ctx, dir, environ); err != nil {
-			return fmt.Errorf("%s: %w", step.name, err)
+// runSteps runs steps in order with t and stops at the first error. The error
+// names the failed step, carries the error of its command, which names the
+// command and the directory, and lists the steps that didn't finish, starting
+// with the failed one.
+func runSteps(ctx context.Context, t *tools, steps []step) error {
+	for i, s := range steps {
+		if err := s.run(ctx, t); err != nil {
+			var left []string
+			for _, l := range steps[i:] {
+				left = append(left, l.name)
+			}
+			return fmt.Errorf("%s: %w\nThese steps didn't finish: %s", s.name, err, strings.Join(left, ", "))
 		}
 	}
 	return nil
 }
 
+// followUpSteps returns the follow-up steps for the project in dir, in the
+// order they run. A step is in the list only if its file exists in dir, and a
+// step marked newOnly only if isNew is true. Every file is checked before any
+// step runs, so a step's file is one the template writes, not one an earlier
+// step creates.
+func followUpSteps(dir string, isNew bool) ([]step, error) {
+	all := []struct {
+		step
+		// file is a path relative to the project root.
+		file string
+		// newOnly marks a step that sow new runs and sow update skips, such
+		// as one that writes a gitignored file. git reset --hard && git
+		// clean -fd can't undo a change to a gitignored file, so an update
+		// never makes one (ADR 0012).
+		newOnly bool
+	}{
+		{
+			step:    step{name: "copy .env.example to .env", run: copyEnvExample},
+			file:    ".env.example",
+			newOnly: true,
+		},
+		{
+			// Vite+ installs the pnpm version that packageManager names and
+			// writes pnpm-lock.yaml, which holds the exact versions of the
+			// project's dependencies (ADR 0007).
+			step: step{name: "install the dependencies", run: command("vp", "install")},
+			file: "pnpm-workspace.yaml",
+		},
+	}
+	var steps []step
+	for _, s := range all {
+		if s.newOnly && !isNew {
+			continue
+		}
+		_, err := os.Stat(filepath.Join(dir, s.file))
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		steps = append(steps, s.step)
+	}
+	return steps, nil
+}
+
 // copyEnvExample copies .env.example to .env so a new project starts with the
 // example settings. It leaves an existing .env alone.
-func copyEnvExample(_ context.Context, dir string, _ []string) error {
-	destination := filepath.Join(dir, ".env")
+func copyEnvExample(_ context.Context, t *tools) error {
+	destination := filepath.Join(t.dir, ".env")
 	_, err := os.Lstat(destination)
 	if err == nil {
 		return nil
@@ -77,16 +101,9 @@ func copyEnvExample(_ context.Context, dir string, _ []string) error {
 	if !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
-	content, err := os.ReadFile(filepath.Join(dir, ".env.example"))
+	content, err := os.ReadFile(filepath.Join(t.dir, ".env.example"))
 	if err != nil {
 		return err
 	}
 	return os.WriteFile(destination, content, 0o644)
-}
-
-// installDependencies runs "vp install" at the project root. Vite+ installs
-// the pnpm version that packageManager names and writes pnpm-lock.yaml, which
-// holds the exact versions of the project's dependencies (ADR 0007).
-func installDependencies(ctx context.Context, dir string, environ []string) error {
-	return run(ctx, environ, dir, "vp", "install")
 }
