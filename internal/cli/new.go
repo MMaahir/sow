@@ -9,7 +9,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/MMaahir/sow"
 	"github.com/MMaahir/sow/internal/answers"
 	"github.com/MMaahir/sow/internal/project"
 )
@@ -79,7 +78,7 @@ func newCommand(env Env) *cobra.Command {
 			Dir:      filepath.Join(env.Dir, resolved[answers.ProjectName]),
 			Answers:  resolved,
 			Version:  env.Version,
-			Template: sow.Template(),
+			Template: env.Template,
 			Environ:  env.Environ,
 			GitHub:   github,
 		})
