@@ -1,6 +1,6 @@
 # backend: go prototype
 
-Run on 2026-11-10 for ticket #104, in a throwaway Go module outside the repo. It compares the options for the Go backend's HTTP framework, OpenAPI document, database library, migration tool, logger and OpenTelemetry setup, and proves the chosen set against Postgres, an OTLP receiver and orval. ADR 0014 records the decision.
+Run on 2026-11-10 for ticket #104, in a throwaway Go module outside the repo, and extended on 2026-11-11 after review. It compares the options for the Go backend's HTTP framework, OpenAPI document, database library, migration tool, logger and OpenTelemetry setup, and proves the chosen set against Postgres, an OTLP receiver and orval. ADR 0014 records the decision.
 
 Every version below was the latest release on the Go module proxy, npm or Docker Hub when it was checked on 2026-11-10.
 
@@ -36,13 +36,13 @@ backend/
   internal/telemetry/      the OpenTelemetry setup and the slog handler that adds trace IDs
   cmd/openapi/main.go      writes the OpenAPI document to stdout
   cmd/migrate/main.go      "migrate up" and "migrate new <name>", built on goose
-  migrations/              goose SQL files
+  migrations/              goose SQL files, and migrations.go, which embeds them
   openapi.json
   .golangci.yml
   mise.toml
 ```
 
-The Go code is 342 lines. The final `go.mod` requires 10 modules directly (huma, pgx, goose and seven OpenTelemetry modules) and 26 indirectly. `go.sum` has 116 lines.
+The Go code is 357 lines, plus a 44-line test file. The final `go.mod` requires 10 modules directly (huma, pgx, goose and seven OpenTelemetry modules) and 26 indirectly. `go.sum` has 116 lines.
 
 The mise tasks:
 
@@ -56,7 +56,7 @@ The mise tasks:
 | `migrate` | `go run ./cmd/migrate up` |
 | `migrate-new` | `go run ./cmd/migrate new` (mise appends the name) |
 
-A script ran every check below in one go and printed 23 `PASS` lines. It removed its containers on exit. The prototype's README lists the command behind each check, copied here because the prototype isn't kept. Commands run in `backend/`, `frontend/` holds only orval and TypeScript, and `otel/config.yaml` configures the collector's OTLP/HTTP receiver and file exporter.
+A script ran every check below in one go and printed 29 `PASS` lines. It removed its containers on exit. The prototype's README lists the command behind each check, copied here because the prototype isn't kept. Commands run in `backend/` unless noted. `sqlc/` is a copy of the backend with sqlc's config, queries and generated code in `internal/db/`. `frontend/` holds orval, TypeScript and the frontend template's `orval.config.ts`, starter route and route tree, copied from `template/frontend-react/frontend/` on `feat/0.3-frontend`. `otel/config.yaml` configures the collector's OTLP/HTTP receiver and file exporter.
 
 | Point | Command | Passes when |
 |---|---|---|
@@ -70,10 +70,16 @@ A script ran every check below in one go and printed 23 `PASS` lines. It removed
 | `/readyz` | `curl localhost:3000/readyz` with Postgres up, then after `docker stop proto104-pg` | 200, then 503, while `/healthz` stays 200 |
 | `migrate` | `mise run migrate` twice, with no `.env` | first prints `applied ...create_example.sql`, second prints `no pending migrations`, both exit 0 |
 | `migrate-new` | `mise run migrate-new add_example` | `migrations/<timestamp>_add_example.sql` exists |
+| Embedded migrations | drop `example` and `goose_db_version`, then run `bin/migrate up` from an empty directory | prints `applied ...create_example.sql` |
+| sqlc generate | in `sqlc/`: `mise exec -- sqlc generate` | exits 0, and `internal/db/*.go` is unchanged |
+| sqlc misspelt column | in `sqlc/`: change `name` to `nmae` in the `ListExamples` query, then `mise exec -- sqlc generate` | exits 1 with `column "nmae" does not exist` |
+| sqlc queries run | in `sqlc/`, after `migrate`: `go test -count=1 ./internal/db/` with `DATABASE_URL` set | passes |
 | OTLP receiver | `docker run -d --name proto104-otel -p 54318:4318 -v $PWD/../otel/config.yaml:/etc/otelcol-contrib/config.yaml -v $PWD/../otel/out:/out otel/opentelemetry-collector-contrib:0.165.0` | |
 | Traces, metrics, logs | `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:54318 bin/backend`, request `/healthz`, `/readyz` and `/openapi.json`, stop the server, read `../otel/out/telemetry.jsonl` | one span `GET /openapi.json` with `service.name` `demo-backend`, no health spans, `http.server.request.duration` with `http.response.status_code`, and the request's log line has the span's `trace_id` |
 | orval | in `frontend/`: `pnpm exec orval && pnpm exec tsc -p .` | exits 0, and `src/client.gen.ts` has `useGetHealthz` |
+| orval without `forceSuccessResponse` | in `frontend/`: remove `override` from `orval.config.ts`, then `pnpm exec orval && pnpm exec tsc -p .` | `tsc` fails with TS2322 in `src/routes/index.tsx` |
 | Static image | `CGO_ENABLED=0 GOOS=linux go build -o ../linux/backend .`, then `docker run --rm -p 3000:3000 -v $PWD/../linux:/app:ro gcr.io/distroless/static-debian13:nonroot /app/backend` | `/healthz` returns 200 |
+| Migrations on distroless | `CGO_ENABLED=0 GOOS=linux go build -o ../linux/migrate ./cmd/migrate`, then with Postgres up, `docker run --rm -e DATABASE_URL=postgresql://app:app@host.docker.internal:55432/demo -v $PWD/../linux:/app:ro gcr.io/distroless/static-debian13:nonroot /app/migrate up` | prints `no pending migrations` |
 
 The results:
 
@@ -86,11 +92,14 @@ The results:
 - Starting the server against an empty database creates no table.
 - `mise run migrate` with only `DATABASE_URL` set and no `.env` applies the initial migration and exits 0. A second run prints `no pending migrations` and exits 0.
 - `mise run migrate-new add_example` creates `migrations/<timestamp>_add_example.sql`.
+- `bin/migrate` applies the initial migration from a directory with no SQL files, because it embeds them. Before the embed, the same run failed with `migrate: no migrations found`.
+- In `sqlc/`, `sqlc generate` writes the same `internal/db` code that's there, fails on a misspelt column, and the generated functions pass a test against Postgres.
 - With `OTEL_EXPORTER_OTLP_ENDPOINT` pointing at the collector, a request to `/openapi.json` produces a span named `GET /openapi.json` with `service.name` `demo-backend`. `/healthz` and `/readyz` produce no spans.
 - The collector receives `http.server.request.duration` with `http.response.status_code` and `http.route` attributes.
 - The request's log line is JSON with the same `trace_id` as its span. The startup line has no `trace_id`.
-- orval 8.47.0 generates a client from the exported `openapi.json`. `tsc` 7.0.2 accepts it, and it has `useGetHealthz` and `useGetReadyz`, the same hook names the `backend: ts` document gives.
-- `CGO_ENABLED=0 GOOS=linux go build` gives a static binary that serves `/healthz` on `distroless/static-debian13:nonroot`. The prototype ran the binary in that image with a volume mount, without a Dockerfile.
+- orval 8.47.0 generates a client from the exported `openapi.json`, with the frontend template's config, which sets `override.fetch.forceSuccessResponse: true`. `tsc` 7.0.2 accepts it together with the template's starter route, and the client has `useGetHealthz` and `useGetReadyz`, the same hook names the `backend: ts` document gives.
+- Without `forceSuccessResponse`, the same route fails `tsc` with `Type 'number | "ok" | undefined' is not assignable to type 'string'` on its status line.
+- `CGO_ENABLED=0 GOOS=linux go build` gives static binaries. The server serves `/healthz` on `distroless/static-debian13:nonroot`, and `migrate up` runs there against Postgres with only the binary in the container. The prototype ran the binaries in that image with a volume mount, without a Dockerfile.
 
 ## The HTTP framework and the OpenAPI document
 
@@ -108,7 +117,7 @@ The requirement is the one `backend: ts` meets with `@hono/zod-openapi`: one def
 | What a model writes to add a route | one `huma.Register` call and two structs, copied from the next route | a block of OpenAPI JSON by hand, then a handler method that matches the generated interface | a handler and a comment block in swag's own syntax | the same as oapi-codegen |
 | Prototyped | yes, end to end | yes, generate, build and serve | no | no |
 
-huma's `humago` adapter runs on the standard library's `http.ServeMux`, which has handled method and path-parameter patterns since Go 1.22. The handlers stay `net/http` handlers, and the middleware is plain `func(http.Handler) http.Handler`. huma also ships adapters for chi, echo, gin and others, so a later move to one of those routers changes one line.
+huma's `humago` adapter runs on the standard library's `http.ServeMux`, which has handled method and path-parameter patterns since Go 1.22. A handler is a huma function, `func(context.Context, *Input) (*Output, error)`, and the adapter builds the `net/http` handler around it. `otelhttp` and the request logger wrap the `ServeMux` as plain `func(http.Handler) http.Handler` middleware. huma also ships adapters for chi, echo, gin and others, so a later move to one of those routers changes one line and keeps the handlers.
 
 oapi-codegen 2.8.2 also passed. It generated a `std-http` strict server from the very `openapi.json` huma had exported, including the 3.1 `type: ["array", "null"]` form, and the server answered `/healthz`. It's spec-first, so drift is prevented by regenerating and compiling. It lost on two points. A model has to write OpenAPI JSON by hand, which is verbose and easy to get subtly wrong, and every new route regenerates a 400-line file the author can't review. Adding it with `go tool` puts the generator and kin-openapi in the module graph.
 
@@ -120,7 +129,7 @@ How each option scores on the author's constraints:
 
 | | Close to the standard library | Small | Easy for weaker models | Drift prevented |
 |---|---|---|---|---|
-| huma on `ServeMux` | yes, `net/http` handlers and middleware | 2 modules, no generated code | copy one `Register` block | for every route registered through huma |
+| huma on `ServeMux` | yes for the server, router and middleware. Handlers use huma's signature | 2 modules, no generated code | copy one `Register` block | for every route registered through huma |
 | oapi-codegen | yes, generates `net/http` code | no runtime modules, 437 generated lines | must write OpenAPI by hand | yes, with a freshness check on generated code |
 | swaggo | yes | not checked | must learn swag's comment syntax | no |
 | ogen | not checked | not checked | must write OpenAPI by hand | yes, with a freshness check on generated code |
@@ -137,7 +146,8 @@ How each option scores on the author's constraints:
   ```
 
   With that, `/healthz` returns `{"status":"ok"}`, the same body as `backend: ts`.
-- Set `OperationID` to `getHealthz` and `getReadyz`. orval names the hooks from it, and those names match what it derives from the `backend: ts` document, so the frontend works unchanged.
+- Set `OperationID` to `getHealthz` and `getReadyz`. orval names the hooks from it, and those names match what it derives from the `backend: ts` document.
+- The frontend's `orval.config.ts` must set `override.fetch.forceSuccessResponse: true`, as the frontend template from #60 does. huma's error responses make orval type the response as a union of the 200 body and `ErrorModel`. Without the setting, the starter route's `status = data.data.status` fails `tsc` with `Type 'number | "ok" | undefined' is not assignable to type 'string'`, because `ErrorModel` also has a `status` field, a number. With it, the hook's data holds only the 200 body and the route type-checks unchanged.
 - A route registered like this is served and documented by the same call:
 
   ```go
@@ -156,11 +166,11 @@ How each option scores on the author's constraints:
   ```
 
   `Status` is `struct{ Status string `json:"status" enum:"ok"` }`, and huma turns the `enum` tag into the schema's `enum`.
-- huma adds error responses on its own. Every operation gets a `default` response, and an operation with `Errors` also gets 500. They use an `ErrorModel` schema with the content type `application/problem+json` (RFC 9457). A 503 body is `{"title":"Service Unavailable","status":503,"detail":"not ready"}`. The document is therefore longer than the `backend: ts` one, and orval generates `ErrorModel` and per-status response types from it. `tsc` accepts them.
+- huma adds error responses on its own. An operation without `Errors` gets a `default` error response, so `/healthz` has 200 and `default`. An operation with `Errors` gets those statuses and 500 instead, so `/readyz` has 200, 500 and 503. They use an `ErrorModel` schema with the content type `application/problem+json` (RFC 9457). A 503 body is `{"title":"Service Unavailable","status":503,"detail":"not ready"}`. The document is therefore longer than the `backend: ts` one, and orval generates `ErrorModel` and per-status response types from it. `tsc` accepts them.
 - The export needs no server. `cmd/openapi` builds the API on a fresh `ServeMux` and marshals `api.OpenAPI()` with `json.MarshalIndent`. huma writes object keys in sorted order, so the output is the same bytes on every run. The served `/openapi.json` is compact, so compare it after `jq -S`.
 - huma's own `go.mod` lists gin, echo, fiber and others for its adapters. Go's module graph pruning keeps them out of the backend's `go.mod`. Only `google/uuid` arrives with huma.
 - The drift gap: `mux.HandleFunc` on the same `ServeMux` serves a route the document doesn't list. `backend: ts` has the same gap with `app.get`. The generated `AGENTS.md` should say every route goes through `huma.Register`.
-- huma has one main maintainer, who wrote more than 900 of its commits. It's MIT-licensed and had eight releases between February and October 2026. If it stops, the handlers are plain Go functions and the routes are on a standard `ServeMux`, so moving to oapi-codegen means writing the spec from the last exported `openapi.json`, which oapi-codegen already accepted.
+- huma has one main maintainer, who wrote more than 900 of its commits. It's MIT-licensed and published nine releases between February and October 2026, from 2.36.0 to 2.40.0 on its GitHub releases page. If it stops, oapi-codegen can generate a server from the last exported `openapi.json`, which it already accepted. The `ServeMux`, the server and the middleware around it carry over. The handlers don't, because each is a huma function, so each one is rewritten as a method of the interface oapi-codegen generates.
 
 ## The database library
 
@@ -174,13 +184,22 @@ How each option scores on the author's constraints:
 
 The choice is pgx v5 with sqlc. pgx is the Postgres driver every other option here uses underneath. sqlc is the Go counterpart of Prisma's generated client. It reads the goose migrations as the schema and writes typed functions from SQL, so a model writes SQL it can test in `psql`, and a typo fails before the code compiles. The generated code adds no module beyond pgx.
 
-GORM was rejected without a prototype. Its `AutoMigrate` invites migrating at startup, which #107 forbids, and its query builder hides the SQL from the author.
+GORM was rejected without a prototype, because its query builder hides the SQL from the author. Its `AutoMigrate` only runs when the code calls it, so GORM wouldn't break #107's rule against migrating at startup.
 
 What the prototype showed:
 
 - `pgxpool.New` doesn't connect until the first query, so the server starts while Postgres is down. `/readyz` runs `SELECT 1` with a 2-second timeout.
 - pgx accepts the `.env.example` form `postgresql://app:app@localhost:5432/demo` with no `sslmode`.
-- sqlc 1.31.1, configured with `schema: migrations` and `sql_package: pgx/v5`, read the goose migration, skipped its `-- +goose Down` section, and generated `CreateExample` and `ListExamples`. A test ran both against Postgres and passed.
+- sqlc 1.31.1, configured with `schema: migrations` and `sql_package: pgx/v5`, read the goose migration, skipped its `-- +goose Down` section, and ignored `migrations.go`. From this `internal/db/queries.sql` it generated `CreateExample` and `ListExamples`, and a test ran both against Postgres and passed:
+
+  ```sql
+  -- name: CreateExample :one
+  INSERT INTO example (name) VALUES ($1) RETURNING id, name;
+
+  -- name: ListExamples :many
+  SELECT id, name FROM example ORDER BY id;
+  ```
+
 - `sqlc generate` failed with `column "nmae" does not exist` on a misspelt column.
 - `sqlc generate` fails when the queries file has no query. The template therefore needs a starter table and one query, or it ships sqlc's config only once the first query exists. #107 decides which, and adds a freshness check for the generated code like the one for `openapi.json`.
 
@@ -190,20 +209,37 @@ What the prototype showed:
 |---|---|---|---|---|
 | `migrate` | `go run ./cmd/migrate up` | `go tool goose ... up` | `dbmate up` | `migrate -path ... -database ... up` |
 | `migrate-new add_example` | writes `migrations/<timestamp>_add_example.sql` | the same | writes `db/migrations/<timestamp>_add_example.sql` | writes separate up and down files |
-| Reads `DATABASE_URL` | the 60-line command reads it | needs it passed as an argument | yes, natively | needs it passed as an argument |
-| Effect on `go.mod` | goose plus 3 small modules | 51 more modules, including drivers for ClickHouse, MySQL, SQL Server, SQLite and YDB, and newer versions of shared modules such as gRPC | none | none if installed as a binary |
-| In the production image | `bin/migrate`, built from the same module | needs the Go toolchain | a second, 31.6 MB binary to download | a second binary to download |
+| Reads `DATABASE_URL` | the 65-line command reads it | needs it passed as an argument | yes, natively | needs it passed as an argument |
+| Effect on `go.mod` | goose plus 3 small modules | 51 more modules, including drivers for ClickHouse, MySQL, SQL Server, SQLite and YDB | none | none if installed as a binary |
+| In the production image | `bin/migrate` alone, built from the same module with the migrations embedded | needs the Go toolchain | a second, 31.6 MB binary to download | a second binary to download |
 | Prototyped | yes | added and measured, then removed | yes, `new` and `up` twice | no |
 
-The choice is goose as a library, in a small `cmd/migrate` command. The deploy step that runs migrations (roadmap, `database`) can use `bin/migrate` from the backend's own image, built from the same `go.mod`, so the author's Dockerfile builds two binaries and downloads no tool. Renovate's gomod manager bumps goose with the other modules.
+The choice is goose as a library, in a small `cmd/migrate` command, with the migrations embedded in the binary. The deploy step that runs migrations (roadmap, `database`) can use `bin/migrate` from the backend's own image, built from the same `go.mod`, so the author's Dockerfile builds two binaries and downloads no tool. Renovate's gomod manager bumps goose with the other modules.
+
+The prototype first read the migrations with `os.DirFS("migrations")`. Run from a directory without them, as it would be in an image holding only the binary, `bin/migrate up` failed with `migrate: no migrations found`. It now embeds them, and the same run applies the migration. #107 and the author's Dockerfile can rely on this:
+
+- The image that runs migrations needs `bin/migrate` and no SQL files.
+- `migrations/` holds `migrations.go` beside the SQL files. `//go:embed *.sql` fails the build with `pattern *.sql: no matching files found` when the directory has no SQL file, so the template has to ship at least one migration.
+- `migrate new` still writes to `migrations/` on disk, so it runs from the backend's directory, as `mise run migrate-new` does.
 
 dbmate 2.38.1 also worked. It reads `DATABASE_URL` without any wrapper, and `up` twice exited 0 both times. It would add a separate binary to mise and to the image. It also writes `db/schema.sql` after every `up` unless told not to. golang-migrate was rejected without a prototype. Each migration is two files, and a failed migration leaves the database marked dirty until someone runs `force`.
 
 The `migrate` command's core:
 
 ```go
+// migrations/migrations.go
+package migrations
+
+import "embed"
+
+//go:embed *.sql
+var FS embed.FS
+```
+
+```go
+// cmd/migrate/main.go
 db, err := sql.Open("pgx", url) // the driver from github.com/jackc/pgx/v5/stdlib
-provider, err := goose.NewProvider(goose.DialectPostgres, db, os.DirFS("migrations"))
+provider, err := goose.NewProvider(goose.DialectPostgres, db, migrations.FS)
 results, err := provider.Up(context.Background())
 ```
 
@@ -262,7 +298,7 @@ golangci-lint's standard linters found one real problem, an unchecked `db.Close(
 
 ## Not proven here
 
-- The author's Dockerfile and CI jobs. The prototype only ran a static binary in the distroless image.
+- The author's Dockerfile and CI jobs. The prototype only ran the static binaries in the distroless image.
 - A `dev` task that restarts on change. `go run .` doesn't watch files. `node --watch` does this for `backend: ts`. #105 chooses between plain `go run .` and a watcher such as `mise watch`.
 - Rendering through `sow new`, the health tests, and the `.env` loading that mise does in a generated project.
 - Routes with path parameters, query parameters or request bodies, through huma and through orval.
