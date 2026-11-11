@@ -47,6 +47,14 @@ func TestUpdateRejectsAnInvalidAnswersFile(t *testing.T) {
 			file: "project_name: demo\n",
 			want: []string{"sow_version is missing"},
 		},
+		"an invalid answer": {
+			file: "sow_version: 1.2.3\nproject_name: demo\nbackend: rails\n",
+			want: []string{`backend can't be "rails": choose one of none, ts`},
+		},
+		"invalid YAML": {
+			file: "sow_version: 1.2.3\nproject_name: [demo\n",
+			want: []string{"read the answers file", ".sow-answers.yml"},
+		},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
