@@ -140,8 +140,8 @@ The author's routing. A session that orchestrates others follows it.
 | Work | Model |
 |---|---|
 | `difficulty:hard` tickets, planning, specs, answering review findings | Claude Opus, at medium reasoning effort |
-| `difficulty:medium` tickets | Claude Opus |
-| `difficulty:easy` tickets | GLM-5.3-Flash |
+| `difficulty:medium` tickets | Claude Opus, at medium reasoning effort |
+| `difficulty:easy` tickets | GLM-5.3-Flash, at its `max` reasoning variant |
 | Code review | First the model that wrote the code, then GPT-6.1-Sol |
 | Any of the above when Claude's rate limits stop the Claude agents | GPT-6.1-Sol, at medium reasoning effort. Its code gets its second review from GPT-6.1-Terra, because the reviewer is never the model that wrote the code |
 
