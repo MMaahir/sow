@@ -1,0 +1,18 @@
+# sow's own hooks. Install them with: pre-commit install
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-yaml
+      - id: check-merge-conflict
+  - repo: local
+    hooks:
+      # The same gate every agent PR must pass: build, lint and fast tests.
+      - id: mise-check
+        name: mise run check
+        entry: mise run check
+        language: system
+        pass_filenames: false
+        always_run: true

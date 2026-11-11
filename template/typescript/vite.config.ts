@@ -22,6 +22,7 @@ export default defineConfig({
       "**/client.gen.ts",
       "**/routeTree.gen.ts",
       "pnpm-lock.yaml",
+      "mise.toml",
     ],
   },
 });

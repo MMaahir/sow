@@ -11,6 +11,7 @@ import (
 
 	"github.com/charmbracelet/x/term"
 
+	"github.com/MMaahir/sow"
 	"github.com/MMaahir/sow/internal/cli"
 )
 
@@ -30,12 +31,13 @@ func run() int {
 		return 1
 	}
 	env := cli.Env{
-		Stdin:   os.Stdin,
-		Stdout:  os.Stdout,
-		Stderr:  os.Stderr,
-		Dir:     dir,
-		Environ: os.Environ(),
-		Version: version(),
+		Stdin:    os.Stdin,
+		Stdout:   os.Stdout,
+		Stderr:   os.Stderr,
+		Dir:      dir,
+		Environ:  os.Environ(),
+		Version:  version(),
+		Template: sow.Template(),
 	}
 	// Prompts go to stderr, so a terminal on stdin is enough to ask questions
 	// even when stdout is redirected.

@@ -1,0 +1,9 @@
+[project]
+site_name = "sow"
+site_description = "A CLI that creates and updates TypeScript and Go web projects from one template."
+docs_dir = "docs/public"
+site_dir = "site"
+nav = [
+  { "Home" = "index.md" },
+  { "Install" = "install.md" },
+]
