@@ -72,14 +72,18 @@ func Read(path string) (string, Answers, error) {
 		problems = append(problems, fmt.Errorf(
 			"%s is missing: set it to the sow version that created the project", versionKey))
 	}
+	// An empty answer is reported as missing here, with advice for an
+	// existing project, so CheckGiven doesn't also give sow new's advice.
+	given := maps.Clone(recorded)
 	for _, q := range Questions() {
-		if _, ok := recorded[q.Key]; !ok && !q.Component {
+		if value, ok := recorded[q.Key]; (!ok || value == "") && !q.Component {
 			problems = append(problems, fmt.Errorf(
 				"%s is missing from %s: add it with the value the project was created with, "+
 					"commit the file, then run sow update again", q.Key, FileName))
+			delete(given, q.Key)
 		}
 	}
-	problems = append(problems, CheckGiven(recorded))
+	problems = append(problems, CheckGiven(given))
 	if err := errors.Join(problems...); err != nil {
 		return "", nil, fmt.Errorf("check the answers file %s: %w", path, err)
 	}

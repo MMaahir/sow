@@ -176,7 +176,13 @@ func cacheTemplate(ctx context.Context, opts UpdateOptions, tag, fetch, cached s
 		return fmt.Errorf("list the template of %s: %w", tag, err)
 	}
 
+	// The directory exists even when the listing has no files, so a release
+	// with an empty template fails in rendering with a message that names
+	// the missing directory.
 	template := filepath.Join(fetch, "template")
+	if err := os.MkdirAll(template, 0o755); err != nil {
+		return fmt.Errorf("cache the template: %w", err)
+	}
 	for _, entry := range strings.Split(listing, "\x00") {
 		// Each entry is "<mode> <type> <object>\t<path>".
 		info, name, ok := strings.Cut(entry, "\t")

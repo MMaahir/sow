@@ -43,6 +43,8 @@ func TestUpdateRejectsAnInvalidAnswersFile(t *testing.T) {
 	tests := map[string]struct {
 		file string
 		want []string
+		// absent lists text the error must not contain.
+		absent []string
 	}{
 		"an unknown key": {
 			file: "sow_version: 1.2.3\nproject_name: demo\ndatabse: postgres\n",
@@ -74,6 +76,12 @@ func TestUpdateRejectsAnInvalidAnswersFile(t *testing.T) {
 				"add it with the value the project was created with",
 			},
 		},
+		"an empty answer": {
+			file: "sow_version: 1.2.3\nproject_name: demo\nuser_name: \"\"\nuser_email: test@example.com\ngithub_user: test-user\n",
+			want: []string{"user_name is missing from", "add it with the value the project was created with"},
+			// The advice for sow new doesn't fit an existing project.
+			absent: []string{"--user-name", "personal defaults file"},
+		},
 		"a missing answer and an unknown key": {
 			file: "sow_version: 1.2.3\nproject_name: demo\nuser_name: Test User\nuser_email: test@example.com\ndatabse: postgres\n",
 			want: []string{"github_user is missing from", "databse is not an answer sow knows"},
@@ -94,6 +102,11 @@ func TestUpdateRejectsAnInvalidAnswersFile(t *testing.T) {
 				t.Errorf("exit code = %d, want 1", got.code)
 			}
 			wantContains(t, got.stderr, tt.want...)
+			for _, text := range tt.absent {
+				if strings.Contains(got.stderr, text) {
+					t.Errorf("stderr contains %q:\n%s", text, got.stderr)
+				}
+			}
 			if got := s.read("demo/.sow-answers.yml"); got != tt.file {
 				t.Errorf(".sow-answers.yml = %q, want it untouched", got)
 			}
