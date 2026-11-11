@@ -1,7 +1,9 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
@@ -16,6 +18,10 @@ func updateCommand(env Env) *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: func(*cobra.Command, []string) error {
 			version, recorded, err := answers.Read(filepath.Join(env.Dir, answers.FileName))
+			if errors.Is(err, fs.ErrNotExist) {
+				return fmt.Errorf("%s has no %s: run sow update from the root of a project sow created",
+					env.Dir, answers.FileName)
+			}
 			if err != nil {
 				return err
 			}
