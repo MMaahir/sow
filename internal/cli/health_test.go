@@ -24,6 +24,12 @@ func newHealthSandbox(t *testing.T, tools ...string) *sandbox {
 	}
 	for _, tool := range tools {
 		if _, err := exec.LookPath(tool); err != nil {
+			// mise run test-health sets SOW_HEALTH_STRICT, so a missing tool
+			// fails the run there instead of skipping a check silently.
+			if os.Getenv("SOW_HEALTH_STRICT") != "" {
+				t.Fatalf("%s isn't installed, and SOW_HEALTH_STRICT is set: install it, "+
+					"or run go test ./... to skip the checks that need it", tool)
+			}
 			t.Skipf("%s isn't installed: install it to run this test", tool)
 		}
 	}

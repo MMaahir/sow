@@ -167,7 +167,7 @@ func TestNewRefusesAnExistingDirectory(t *testing.T) {
     }
     ```
 
-    They run the generated project's own tasks with the real tools. `newHealthSandbox` skips the test in short mode and when a tool it names isn't installed, and it's the one sandbox that inherits the real machine's environment. Create the project once per stack and put each check in a `t.Run`, because installing dependencies is slow. Every subtest starts with `s := s.in(t)`, so a failure is reported to the subtest. A subtest that changes the project undoes the change in `t.Cleanup`. Run project tasks through `mise run`, as the author would.
+    They run the generated project's own tasks with the real tools. `newHealthSandbox` skips the test in short mode. It also skips when a tool it names isn't installed, except under `mise run test-health`, which sets `SOW_HEALTH_STRICT` so a missing tool fails the run. It's the one sandbox that inherits the real machine's environment. Create the project once per stack and put each check in a `t.Run`, because installing dependencies is slow. Every subtest starts with `s := s.in(t)`, so a failure is reported to the subtest. A subtest that changes the project undoes the change in `t.Cleanup`. Run project tasks through `mise run`, as the author would.
 11. **A health check that needs a file the author hasn't written yet skips itself** with a message naming the file: `t.Skip("backend/Dockerfile doesn't exist yet: the author writes it")`. Check for the file in the rendered project, not in `template/`.
 
 ### Red, then green

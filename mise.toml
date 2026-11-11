@@ -1,6 +1,7 @@
 [tools]
 go = "1.27.3"
 golangci-lint = "2.15.0"
+pre-commit = "4.7.0"
 # Zensical builds the docs site. mise installs it with uv, and uv runs it on
 # the pinned Python, so a machine needs neither of them beforehand.
 python = "3.14.10"
@@ -24,7 +25,8 @@ description = "Run the fast tests"
 run = "go test -short ./..."
 
 [tasks.test-health]
-description = "Run every test, including the slow generated project health tests"
+description = "Run every test, including the slow generated project health tests. A missing tool fails the run"
+env = { SOW_HEALTH_STRICT = "1" }
 run = "go test ./..."
 
 [tasks.check]
