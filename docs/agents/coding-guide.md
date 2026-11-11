@@ -112,8 +112,9 @@ There are three places to test. Don't test anywhere else unless your ticket name
 - **`render.Render`, with an in-memory template** (`fstest.MapFS`), in `internal/render/render_test.go`. Use it only for rules of the template format, such as what happens when two directories contain the same path.
 
 - **The template's source files**, in `template_test.go` at the repo root. Use it only for rules a rendered project can't show, such as "no file named `.env`" or "`package.json` is never a `.tmpl`". These tests read `template/` on disk with `templatePaths`, not the embedded copy, because Go's embed leaves some files out without an error.
+- **One exception, `everyCombination`**, the test helper in `internal/cli/health_test.go` that lists the valid combinations of answers the every-combination health test generates. `TestEveryCombinationListsEachCombinationValidationAccepts` calls it directly. That health test is slow and runs only on request, so this fast test is the only check that fails when a change to the questions adds or drops a combination. Update its expected list when you add a component or a stack.
 
-Don't write tests for unexported functions, and don't write tests in `internal/answers` or `internal/project`. If something there can't be reached through `cli.Run`, it's either dead code or the ticket should name a seam.
+Apart from `everyCombination`, don't write tests for unexported functions, and don't write tests in `internal/answers` or `internal/project`. If something there can't be reached through `cli.Run`, it's either dead code or the ticket should name a seam.
 
 ### Writing a test
 
