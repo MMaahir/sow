@@ -461,3 +461,13 @@ func withWorkspace(files map[string]string) map[string]string {
 	files["base/pnpm-workspace.yaml"] = "packages: []\n"
 	return files
 }
+
+// withBackendTS returns files with the directories the ts backend selects,
+// backend-ts and typescript, so a project whose answers file records
+// backend: ts renders.
+func withBackendTS(files map[string]string) map[string]string {
+	files = maps.Clone(files)
+	files["backend-ts/backend/index.ts"] = "export {};\n"
+	files["typescript/package.json"] = "{}\n"
+	return files
+}

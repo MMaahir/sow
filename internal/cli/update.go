@@ -1,16 +1,12 @@
 package cli
 
 import (
-	"context"
-	"errors"
 	"fmt"
-	"io/fs"
 	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
 
-	"github.com/MMaahir/sow/internal/answers"
 	"github.com/MMaahir/sow/internal/project"
 )
 
@@ -24,57 +20,42 @@ func updateCommand(env Env) *cobra.Command {
 		Short: "Update the project in this directory to the template of this sow version.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			version, recorded, err := answers.Read(filepath.Join(env.Dir, answers.FileName))
-			if errors.Is(err, fs.ErrNotExist) {
-				return fmt.Errorf("%s has no %s: run sow update from the root of a project sow created",
-					env.Dir, answers.FileName)
+			repo := env.Getenv("SOW_REPO")
+			if repo == "" {
+				repo = defaultRepo
 			}
+			result, err := project.Update(cmd.Context(), project.UpdateOptions{
+				Dir:      env.Dir,
+				Version:  env.Version,
+				Template: env.Template,
+				Repo:     repo,
+				CacheDir: cacheDir(env),
+				Environ:  env.Environ,
+			})
 			if err != nil {
 				return err
 			}
-			if err := checkRenderable(recorded[answers.ProjectName], version, env.Version); err != nil {
-				return err
-			}
-			if version != env.Version {
-				return update(cmd.Context(), env, version, recorded)
-			}
-			if _, err := fmt.Fprintf(env.Stdout, "%s is already at sow %s\n",
-				recorded[answers.ProjectName], version); err != nil {
-				return fmt.Errorf("print the result: %w", err)
-			}
-			return nil
+			return reportUpdate(env, result)
 		},
 	}
 }
 
-// update brings the project from sow version to env.Version and tells the
-// author to review the result.
-func update(ctx context.Context, env Env, version string, recorded answers.Answers) error {
-	repo := env.Getenv("SOW_REPO")
-	if repo == "" {
-		repo = defaultRepo
-	}
-	conflicts, err := project.Update(ctx, project.UpdateOptions{
-		Dir:      env.Dir,
-		Answers:  recorded,
-		From:     version,
-		To:       env.Version,
-		Template: env.Template,
-		Repo:     repo,
-		CacheDir: cacheDir(env),
-		Environ:  env.Environ,
-	})
-	if err != nil {
-		return err
-	}
-	if len(conflicts) > 0 {
+// reportUpdate tells the author what Update did: that the project was
+// already at env.Version, which files have conflict markers, or that the
+// update needs a review.
+func reportUpdate(env Env, result project.UpdateResult) error {
+	if len(result.Conflicts) > 0 {
 		return fmt.Errorf("the update from sow %s to %s left conflict markers in %s: "+
 			"resolve each conflict, run the follow-up steps sow update skipped, such as vp install, "+
 			"and review the changes with git diff. To undo the update, run git reset --hard && git clean -fd",
-			version, env.Version, strings.Join(conflicts, ", "))
+			result.From, env.Version, strings.Join(result.Conflicts, ", "))
 	}
-	if _, err := fmt.Fprintf(env.Stdout, "Updated %s from sow %s to %s. Review the changes with git diff.\n",
-		recorded[answers.ProjectName], version, env.Version); err != nil {
+	message := fmt.Sprintf("Updated %s from sow %s to %s. Review the changes with git diff.\n",
+		result.Name, result.From, env.Version)
+	if result.UpToDate {
+		message = fmt.Sprintf("%s is already at sow %s\n", result.Name, result.From)
+	}
+	if _, err := fmt.Fprint(env.Stdout, message); err != nil {
 		return fmt.Errorf("print the result: %w", err)
 	}
 	return nil

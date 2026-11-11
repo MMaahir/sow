@@ -404,6 +404,27 @@ func TestUpdateRefusesAProjectThatIsNotAGitRepo(t *testing.T) {
 	}
 }
 
+func TestUpdateOfATypeScriptProjectWithoutVPChangesNothing(t *testing.T) {
+	s := newSandbox(t)
+	s.releasedProject("1.0.0", withBackendTS(templateAt100), withBackendTS(withWorkspace(templateAt123)))
+	s.edit("demo/.sow-answers.yml", func(file string) string {
+		return strings.Replace(file, "backend: none\n", "backend: ts\n", 1)
+	})
+	s.commit()
+	s.isolatePath("git")
+	before := s.files("demo")
+
+	got := s.runIn("demo", "update")
+
+	if got.code != 1 {
+		t.Errorf("exit code = %d, want 1", got.code)
+	}
+	wantContains(t, got.stderr, "vp isn't installed", "curl -fsSL https://vite.plus | bash")
+	if after := s.files("demo"); !maps.Equal(after, before) {
+		t.Errorf("project = %q\nwant it unchanged: %q", after, before)
+	}
+}
+
 func TestUpdateKeepsAFileTheProjectDeletedDeleted(t *testing.T) {
 	s := newSandbox(t)
 	s.releasedProject("1.0.0", templateAt100, templateAt123)
