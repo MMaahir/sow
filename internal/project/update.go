@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/MMaahir/sow/internal/answers"
@@ -40,11 +41,12 @@ type UpdateOptions struct {
 // Update brings the project in opts.Dir from the template of release
 // opts.From to opts.Template, and records opts.To in the answers file. It
 // refuses a project that isn't a git repo or has uncommitted or untracked
-// files, so git reset --hard && git clean -fd can always undo the update. It
-// fetches the old template from opts.Repo unless opts.CacheDir already has it,
-// renders the old and the new template with the project's answers, merges
-// each file with git merge-file, and runs the follow-up steps. It never
-// commits.
+// files, so git reset --hard && git clean -fd can always undo the update. For
+// the same reason it refuses a project where a file it would read or write,
+// or a directory above one, is a symlink. It fetches the old template from
+// opts.Repo unless opts.CacheDir already has it, renders the old and the new
+// template with the project's answers, merges each file with git merge-file,
+// and runs the follow-up steps. It never commits.
 //
 // Update returns the paths that git merge-file left conflict markers in,
 // sorted. When there are any, it skips the follow-up steps, because a
@@ -75,6 +77,9 @@ func Update(ctx context.Context, opts UpdateOptions) ([]string, error) {
 		return nil, err
 	}
 
+	if err := checkNoSymlinks(opts.Dir, oldRender, newRender); err != nil {
+		return nil, err
+	}
 	changes, err := planUpdate(opts.Dir, oldRender, newRender)
 	if err != nil {
 		return nil, err
@@ -115,10 +120,8 @@ func checkClean(ctx context.Context, environ []string, dir string) error {
 // opts.From, fetching it from opts.Repo into opts.CacheDir if it isn't there. A
 // release tag never moves, so a cached template never goes stale.
 //
-// It clones only the tagged commit, with no history, and keeps only its
-// template/ directory. It clones into a temporary directory and renames the
-// template into place, so an interrupted fetch never leaves a partial
-// template in the cache.
+// It fetches into a temporary directory and renames the template into place,
+// so an interrupted fetch never leaves a partial template in the cache.
 func fetchTemplate(ctx context.Context, opts UpdateOptions) (string, error) {
 	tag := "v" + opts.From
 	templates := filepath.Join(opts.CacheDir, "templates")
@@ -130,13 +133,13 @@ func fetchTemplate(ctx context.Context, opts UpdateOptions) (string, error) {
 	if err := os.MkdirAll(templates, 0o755); err != nil {
 		return "", fmt.Errorf("create the cache: %w", err)
 	}
-	clone, err := os.MkdirTemp(templates, "fetch-")
+	fetch, err := os.MkdirTemp(templates, "fetch-")
 	if err != nil {
 		return "", fmt.Errorf("create the cache: %w", err)
 	}
-	err = cacheTemplate(ctx, opts, tag, clone, cached)
-	if removeErr := os.RemoveAll(clone); removeErr != nil {
-		err = errors.Join(err, fmt.Errorf("remove the clone: %w", removeErr))
+	err = cacheTemplate(ctx, opts, tag, fetch, cached)
+	if removeErr := os.RemoveAll(fetch); removeErr != nil {
+		err = errors.Join(err, fmt.Errorf("remove the fetch: %w", removeErr))
 	}
 	if err != nil {
 		return "", fmt.Errorf("fetch the template of sow %s from %s: %w", opts.From, opts.Repo, err)
@@ -144,25 +147,111 @@ func fetchTemplate(ctx context.Context, opts UpdateOptions) (string, error) {
 	return cached, nil
 }
 
-// cacheTemplate clones the commit that tag names from opts.Repo into clone
-// and moves its template/ directory to cached. git runs in the project
-// root, where the author runs sow update, so a relative SOW_REPO resolves
-// from there.
+// cacheTemplate fetches the tag from opts.Repo into a bare repo in the
+// directory fetch, writes each file under the tag's template/ directory to
+// fetch, and moves the result to cached. git runs in the project root, where
+// the author runs sow update, so a relative SOW_REPO resolves from there.
 //
-// "git clone --depth 1 --branch <tag>" asks the server for that one commit
-// and its files, with no history and no other branches or tags, in one
-// command. The fetch is the size of one checkout of sow.
-func cacheTemplate(ctx context.Context, opts UpdateOptions, tag, clone, cached string) error {
-	err := run(ctx, opts.Environ, opts.Dir, "git", "clone", "--quiet", "--depth", "1", "--branch", tag,
-		"--", opts.Repo, clone)
+// It fetches refs/tags/<tag> by its full name, so a branch with the tag's
+// name never stands in for the release. It fetches one commit with no
+// history. It reads each file with git cat-file, which returns the committed
+// bytes. A checkout or git archive would apply the author's smudge filters
+// and line ending settings, and the old render must match the release
+// exactly, or an edit could look like the template's own content.
+func cacheTemplate(ctx context.Context, opts UpdateOptions, tag, fetch, cached string) error {
+	repo := filepath.Join(fetch, "repo")
+	ref := "refs/tags/" + tag
+	if err := run(ctx, opts.Environ, opts.Dir, "git", "init", "--quiet", "--bare", repo); err != nil {
+		return err
+	}
+	err := run(ctx, opts.Environ, opts.Dir, "git", "--git-dir", repo,
+		"fetch", "--quiet", "--depth", "1", "--no-tags", "--", opts.Repo, "+"+ref+":"+ref)
 	if err != nil {
 		return fmt.Errorf("check that the tag %s exists and the repo is reachable, "+
 			"or set SOW_REPO to a clone of sow that has the tag: %w", tag, err)
 	}
-	if err := os.Rename(filepath.Join(clone, "template"), cached); err != nil {
+	listing, err := output(ctx, opts.Environ, opts.Dir, "git", "--git-dir", repo,
+		"ls-tree", "-r", "-z", ref+":template")
+	if err != nil {
+		return fmt.Errorf("list the template of %s: %w", tag, err)
+	}
+
+	template := filepath.Join(fetch, "template")
+	for _, entry := range strings.Split(listing, "\x00") {
+		// Each entry is "<mode> <type> <object>\t<path>".
+		info, name, ok := strings.Cut(entry, "\t")
+		fields := strings.Fields(info)
+		if !ok || len(fields) != 3 || fields[1] != "blob" {
+			continue
+		}
+		content, err := output(ctx, opts.Environ, opts.Dir, "git", "--git-dir", repo, "cat-file", "blob", fields[2])
+		if err != nil {
+			return fmt.Errorf("read template/%s at %s: %w", name, tag, err)
+		}
+		target := filepath.Join(template, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			return fmt.Errorf("cache the template: %w", err)
+		}
+		if err := os.WriteFile(target, []byte(content), 0o644); err != nil {
+			return fmt.Errorf("cache the template: %w", err)
+		}
+	}
+	if err := os.Rename(template, cached); err != nil {
 		return fmt.Errorf("cache the template: %w", err)
 	}
 	return nil
+}
+
+// checkNoSymlinks returns an error that names every symlink in the project
+// in dir that Update would read or write through: a path of either render,
+// the answers file, or a directory above one of them. Writing through a
+// symlink would change a file outside the project, which git reset --hard
+// can't restore.
+func checkNoSymlinks(dir string, oldRender, newRender []render.File) error {
+	names := []string{answers.FileName}
+	for _, file := range slices.Concat(oldRender, newRender) {
+		names = append(names, file.Path)
+	}
+	var links []string
+	for _, name := range names {
+		link, err := symlinkIn(dir, name)
+		if err != nil {
+			return err
+		}
+		if link != "" && !slices.Contains(links, link) {
+			links = append(links, link)
+		}
+	}
+	slices.Sort(links)
+	var problems []error
+	for _, link := range links {
+		problems = append(problems, fmt.Errorf("%s is a symbolic link, and sow update won't write through it, "+
+			"because git reset --hard can't restore the file it points to: "+
+			"replace the link with the file or directory it points to, commit it, then run sow update again", link))
+	}
+	return errors.Join(problems...)
+}
+
+// symlinkIn returns the first part of name, a path relative to root with
+// forward slashes, that is a symlink in root, such as "docs" for
+// "docs/guide.md". It returns "" when no part is a symlink, including when a
+// part doesn't exist.
+func symlinkIn(root, name string) (string, error) {
+	parts := strings.Split(name, "/")
+	for i := range parts {
+		part := path.Join(parts[:i+1]...)
+		info, err := os.Lstat(filepath.Join(root, filepath.FromSlash(part)))
+		if errors.Is(err, fs.ErrNotExist) {
+			return "", nil
+		}
+		if err != nil {
+			return "", err
+		}
+		if info.Mode()&fs.ModeSymlink != 0 {
+			return part, nil
+		}
+	}
+	return "", nil
 }
 
 // changeAction is what Update does to one file of the project.

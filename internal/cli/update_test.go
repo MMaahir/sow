@@ -3,6 +3,7 @@ package cli_test
 import (
 	"maps"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -63,6 +64,20 @@ func TestUpdateRejectsAnInvalidAnswersFile(t *testing.T) {
 				`backend can't be "rails": choose one of none, ts`,
 			},
 		},
+		"only sow_version": {
+			file: "sow_version: 1.2.3\n",
+			want: []string{
+				"project_name is missing from",
+				"user_name is missing from",
+				"user_email is missing from",
+				"github_user is missing from",
+				"add it with the value the project was created with",
+			},
+		},
+		"a missing answer and an unknown key": {
+			file: "sow_version: 1.2.3\nproject_name: demo\nuser_name: Test User\nuser_email: test@example.com\ndatabse: postgres\n",
+			want: []string{"github_user is missing from", "databse is not an answer sow knows"},
+		},
 		"invalid YAML": {
 			file: "sow_version: 1.2.3\nproject_name: [demo\n",
 			want: []string{"read the answers file", ".sow-answers.yml"},
@@ -88,7 +103,8 @@ func TestUpdateRejectsAnInvalidAnswersFile(t *testing.T) {
 
 func TestUpdateAcceptsAnAnswersFileWithoutALaterComponent(t *testing.T) {
 	s := newSandbox(t)
-	s.write(s.dir, "demo/.sow-answers.yml", "sow_version: 1.2.3\nproject_name: demo\n")
+	s.write(s.dir, "demo/.sow-answers.yml", "sow_version: 1.2.3\nproject_name: demo\n"+
+		"user_name: Test User\nuser_email: test@example.com\ngithub_user: test-user\n")
 
 	got := s.runIn("demo", "update")
 
@@ -126,6 +142,15 @@ func TestUpdateRefusesAVersionItCantRender(t *testing.T) {
 			recorded: "1.10.0",
 			cli:      "1.9.0",
 			want:     []string{"1.10.0", "newer than this sow", "upgrade sow"},
+		},
+		"a released project with a development build of sow": {
+			recorded: "1.0.0",
+			cli:      "0.0.0-dev",
+			want: []string{
+				"this sow is a development build",
+				"a release build of sow at 1.0.0 or later",
+				"go install github.com/MMaahir/sow/cmd/sow@v1.0.0",
+			},
 		},
 		"a word": {
 			recorded: "latest",
@@ -660,4 +685,119 @@ func TestUpdateReadsARelativeSOWRepoFromTheProjectDirectory(t *testing.T) {
 		t.Errorf("exit code = %d, want 0\n%s", got.code, got.stderr)
 	}
 	wantContains(t, s.read("demo/README.md"), "line four, from sow 1.2.3\n")
+}
+
+func TestUpdateIgnoresAGitWarningWhenItChecksForLocalChanges(t *testing.T) {
+	s := newSandbox(t)
+	s.releasedProject("1.0.0", templateAt100, templateAt123)
+	s.isolatePath()
+	realGit, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.fakeTool("git", `if [ "$1" = status ]; then echo "warning: unable to access attributes" >&2; fi
+exec "`+realGit+`" "$@"`)
+
+	got := s.runIn("demo", "update")
+
+	if got.code != 0 {
+		t.Errorf("exit code = %d, want 0\n%s", got.code, got.stderr)
+	}
+	wantContains(t, s.read("demo/README.md"), "line four, from sow 1.2.3\n")
+}
+
+func TestUpdateReadsTheOldTemplateWithoutTheAuthorsCheckoutFilters(t *testing.T) {
+	s := newSandbox(t)
+	s.releasedProject("1.0.0", templateAt100, templateAt123)
+	s.edit("demo/README.md", func(readme string) string {
+		return strings.Replace(readme, "line one\n", "line one, mine\n", 1)
+	})
+	s.commit()
+	// A smudge filter that turns the old template's README into the author's
+	// edit. If sow checked the release out, the edit would look unedited.
+	s.write(s.home, "attributes", "*.tmpl filter=mine\n")
+	s.write(s.home, "gitconfig", "[core]\n\tattributesFile = "+filepath.Join(s.home, "attributes")+
+		"\n[filter \"mine\"]\n\tsmudge = sed 's/line one$/line one, mine/'\n\tclean = cat\n")
+
+	got := s.runIn("demo", "update")
+
+	if got.code != 0 {
+		t.Errorf("exit code = %d, want 0\n%s", got.code, got.stderr)
+	}
+	want := "# demo\n\nline one, mine\nline two\nline three\nline four, from sow 1.2.3\nline five\n"
+	if got := s.read("demo/README.md"); got != want {
+		t.Errorf("README.md = %q, want %q", got, want)
+	}
+}
+
+func TestUpdateRefusesABranchNamedLikeTheRecordedTag(t *testing.T) {
+	s := newSandbox(t)
+	s.releasedProject("1.0.0", templateAt100, templateAt123)
+	s.gitIn(s.repo, "tag", "--delete", "v1.0.0")
+	s.gitIn(s.repo, "branch", "v1.0.0")
+
+	got := s.runIn("demo", "update")
+
+	if got.code != 1 {
+		t.Errorf("exit code = %d, want 1", got.code)
+	}
+	wantContains(t, got.stderr, "v1.0.0", "SOW_REPO")
+	if got := s.git("status", "--porcelain"); got != "" {
+		t.Errorf("sow update changed the project:\n%s", got)
+	}
+}
+
+func TestUpdateRefusesToWriteThroughASymlink(t *testing.T) {
+	tests := map[string]struct {
+		link   string
+		target string
+		want   string
+	}{
+		"a file":             {link: "README.md", target: "outside/README.md", want: "README.md is a symbolic link"},
+		"a parent directory": {link: "docs", target: "outside", want: "docs is a symbolic link"},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			s := newSandbox(t)
+			withDocs := maps.Clone(templateAt100)
+			withDocs["base/docs/guide.md"] = "guide\n"
+			newWithDocs := maps.Clone(templateAt123)
+			newWithDocs["base/docs/guide.md"] = "guide, from sow 1.2.3\n"
+			s.releasedProject("1.0.0", withDocs, newWithDocs)
+			outside := map[string]string{"README.md": s.read("demo/README.md"), "guide.md": "guide\n"}
+			for name, content := range outside {
+				s.write(s.home, "outside/"+name, content)
+			}
+			if err := os.RemoveAll(filepath.Join(s.dir, "demo", tt.link)); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(filepath.Join(s.home, tt.target), filepath.Join(s.dir, "demo", tt.link)); err != nil {
+				t.Fatal(err)
+			}
+			s.commit()
+			before := s.files("demo")
+
+			got := s.runIn("demo", "update")
+
+			if got.code != 1 {
+				t.Errorf("exit code = %d, want 1", got.code)
+			}
+			wantContains(t, got.stderr, tt.want, "replace the link")
+			if got, want := s.files("demo"), before; !maps.Equal(got, want) {
+				t.Errorf("project = %q\nwant it unchanged: %q", got, want)
+			}
+			if got := s.git("status", "--porcelain"); got != "" {
+				t.Errorf("sow update changed the project:\n%s", got)
+			}
+			for name, want := range outside {
+				content, err := os.ReadFile(filepath.Join(s.home, "outside", name))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if string(content) != want {
+					t.Errorf("outside/%s = %q, want it untouched: %q", name, content, want)
+				}
+			}
+		})
+	}
 }
