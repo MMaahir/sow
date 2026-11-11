@@ -20,7 +20,7 @@ The format is a compatibility contract. `sow update` renders the template of an 
 `sow update` and `sow add` always target the CLI's own version.
 
 1. Refuse to start if the project has uncommitted or untracked files. `git reset --hard && git clean -fd` then safely undoes a failed update.
-2. Read the answers file. Fetch this repo at the tag for the recorded version, and render its `template/` with the recorded answers. That is the old render.
+2. Read the answers file. Refuse a recorded version that has no tag: `0.0.0-dev`, anything that isn't three numbers separated by dots, and a version newer than the CLI's. Fetch this repo at the tag for the recorded version, and render its `template/` with the recorded answers. That is the old render.
 3. Render the embedded template with the answers, changed by `add` if needed. That is the new render.
 4. For each path, three-way merge with `git merge-file`: the project's file, the old render as the base, the new render. A file the project deleted stays deleted. A file only the new render has is added.
 5. Exit non-zero if any file has conflict markers.

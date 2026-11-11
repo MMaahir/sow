@@ -32,6 +32,9 @@ type sandbox struct {
 	// realMachine makes runs inherit the real environment, so the real tools
 	// and their caches work. Only health tests set it.
 	realMachine bool
+	// version is the sow version the sandbox runs as. It's testVersion when
+	// empty.
+	version string
 }
 
 // result is what one sow run produced.
@@ -68,6 +71,9 @@ func (s *sandbox) runIn(dir string, args ...string) result {
 		Dir:     filepath.Join(s.dir, filepath.FromSlash(dir)),
 		Environ: s.environ(),
 		Version: testVersion,
+	}
+	if s.version != "" {
+		env.Version = s.version
 	}
 	if s.prompter != nil {
 		env.Prompter = s.prompter
@@ -224,6 +230,16 @@ func (s *sandbox) exists(name string) bool {
 	s.t.Helper()
 	_, err := os.Lstat(filepath.Join(s.dir, filepath.FromSlash(name)))
 	return err == nil
+}
+
+// projectAt creates the project demo and commits it with version recorded as
+// its sow_version, as if a sow at that version had created it.
+func (s *sandbox) projectAt(version string) {
+	s.t.Helper()
+	s.mustRun("new", "demo", "--no-input")
+	s.write(s.dir, "demo/.sow-answers.yml", strings.Replace(
+		s.read("demo/.sow-answers.yml"), "sow_version: "+testVersion+"\n", "sow_version: "+version+"\n", 1))
+	s.git("commit", "--all", "--message", "record sow "+version)
 }
 
 // git runs git in the project directory and returns its trimmed output.
