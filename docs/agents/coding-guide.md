@@ -9,10 +9,10 @@ The ticket says what to build. This guide says how. If they disagree on how, thi
 | Path | What lives there | What never lives there |
 |---|---|---|
 | `cmd/sow/main.go` | Reads the real process (arguments, streams, environment, working directory, build version, whether stdin is a terminal) and calls `cli.Run` | Any logic. Don't add files to `cmd/sow` |
-| `internal/cli/` | One file per command. Flags, argument checks, and one call into another package | File writing, rendering, starting processes |
+| `internal/cli/` | One file per command. Flags, argument checks, one call into `internal/project`, and printing its result. `sow new` is the one exception: it also calls `project.CheckTarget` before asking questions, so it never asks about a project it can't create | File writing, rendering, starting processes, version rules, any decision about the project on disk |
 | `internal/answers/` | The questions, presets, validation, the answers file and the personal defaults file | Anything about disk layout of a project |
 | `internal/render/` | Turns template directories and answers into files. Implements the template format in ADR 0012 | Knowledge of specific answers or components |
-| `internal/project/` | Work on a generated project on disk: creating it, follow-up steps, git | Flag parsing, printing to the terminal |
+| `internal/project/` | Work on a generated project on disk. `New` and `Update` are thin entry points into one pipeline in `pipeline.go`, which runs the checks, the old and new renders, the writes and merges, the answers file, the follow-up steps and git. `tools.go` starts every external command. `steps.go` holds the step type, its runner and the follow-up steps. `github.go` holds the `--github` steps. `version.go` holds the version rules for `sow update` | Flag parsing, printing to the terminal |
 | `template/` | The files of generated projects | Go code, infrastructure files (see section 6) |
 | `sow.go` | Embeds `template/` into the binary | Anything else |
 
@@ -33,7 +33,7 @@ Every answer is a string. A component answer has `Component: true`, and its valu
 
 ### Add a stack to a component
 
-1. Add the stack's name to that question's `Choices`. If the stack is TypeScript, add it to the question's `typeScript` list too. `Answers.TypeScriptOn` reads that list, and `sow new` then checks that Vite+ is set up before it writes anything (ADR 0011).
+1. Add the stack's name to that question's `Choices`. If the stack is TypeScript, add it to the question's `typeScript` list too. `Answers.TypeScriptOn` reads that list, and `sow new` and `sow update` then check that Vite+ is set up before they write anything (ADR 0011).
 2. Create `template/<component>-<stack>/`, such as `template/backend-ts/`. `Answers.Dirs()` selects it by that name. Don't add a lookup table.
 3. Put the stack's files inside it at the paths they should have in the project. `template/backend-ts/backend/package.json` becomes `backend/package.json`.
 4. Give the stack a `mise.toml` in its own directory with the `dev`, `test`, `lint` and `build` tasks (ADR 0004), as `template/backend-ts/backend/mise.toml` does.
@@ -53,21 +53,56 @@ Add one entry to `presets` in `internal/answers/presets.go`, and tests like `Tes
 
 ### Add a follow-up step
 
-1. Add one `followUpStep` to the list in `followUpSteps` in `internal/project/steps.go`. Set `name` to what the step does, `file` to a path relative to the project root, and `run` to the function that does the work.
-2. The step runs only if its file exists in the project, after the files are written and before the first commit. Its error is wrapped with `name`.
-3. Test it in `internal/cli/` through the sandbox: the step's effect is on disk, and `git status` is clean after `sow new`. A file the step creates for the local machine only, such as `.env`, is gitignored and stays out of the first commit. A file the project needs, such as the lockfile `vp install` writes, is in the first commit.
-4. Test the failure too: the CLI exits 1, stderr names the command and the directory, and the rendered files are still there.
+1. Add one entry to the list in `followUpSteps` in `internal/project/steps.go`, where you want the step to run. Copy the entry for "install the dependencies":
+
+   ```go
+   {
+   	step: step{name: "install the dependencies", run: command("vp", "install")},
+   	file: "pnpm-workspace.yaml",
+   },
+   ```
+
+   Set `name` to what the step does, in lowercase. Set `run` to `command(...)` with the command and its arguments, which runs in the project root. Set `file` to a path relative to the project root.
+2. The step runs only if `file` exists in the project, after the files are written. Pick a file the template writes, not one an earlier step creates, because `followUpSteps` checks every file before the first step runs.
+3. `sow new` runs the step before the first commit. `sow update` runs it after the merge, unless the merge left conflicts. Add `newOnly: true` to a step that writes a gitignored file, such as `.env`, because `git reset --hard && git clean -fd` can't undo that change after an update.
+4. If the step can't be one command, write a function shaped like `copyEnvExample` in the same file, `func(ctx context.Context, t *tools) error`, and set `run` to it. `t.dir` is the project root. Start any command in it through `t` (see "Start an external command").
+5. Don't change `runSteps` or the pipeline. A failed step's error names the step and the steps that didn't finish, and the files stay on disk. A `command` step's error also names the command and the directory. A function step like `copyEnvExample` returns its own error, which names the file it was working on.
+6. Test it in `internal/cli/` through the sandbox: the step's effect is on disk, and `git status` is clean after `sow new`. A file the step creates for the local machine only, such as `.env`, is gitignored and stays out of the first commit. A file the project needs, such as the lockfile `vp install` writes, is in the first commit.
+7. Test the failure too: the CLI exits 1, stderr names the step, and the rendered files are still there. For a `command` step, stderr also names the command and the directory.
+
+### Add a `--github` step
+
+1. Add one `step` to the list in `githubSteps` in `internal/project/github.go`, where you want it to run. Copy an entry:
+
+   ```go
+   {
+   	name: "push main",
+   	run:  command("git", "push", "--set-upstream", "origin", "main"),
+   },
+   ```
+
+   Set `name` to what the step does, in lowercase, and `run` to `command(...)` with the command and its arguments. Use `repo`, which is `owner/name`, in API paths.
+2. The steps run in order in the project root after the first commit, and only with `--github`. Put a step that needs the pushed branch after "push main".
+3. Don't change `runSteps` or the pipeline. A failed step's error names the step, the command and the directory, lists the steps that didn't finish, and says the project and its first commit are still on disk.
+4. Test it in `internal/cli/github_test.go` with `s.fakeGH`: the recorded `gh` call has the right arguments, and with `s.fakeGH("<part of the call>")` the step fails, the CLI exits 1, and stderr lists the steps that didn't finish.
 
 ### Add a command
 
 1. Create `internal/cli/<command>.go` with a function `<command>Command(env Env) *cobra.Command`, shaped like `newCommand` in `internal/cli/new.go`.
 2. Register it in `Run` in `internal/cli/cli.go` with `root.AddCommand`.
-3. The command's `RunE` reads flags, then makes one call into `internal/project` or another package, and returns its error. `Run` prints the error.
+3. The command's `RunE` reads flags, then makes one call into `internal/project` or another package. It prints the result, if any, and returns the error. `Run` prints the error.
 4. Create `internal/cli/<command>_test.go` and test through the sandbox.
 
 ### Start an external command
 
-Use `run` in `internal/project/new.go`. It finds the executable on the `PATH` of the environment it was given, sets the directory and environment, and returns an error that names the command, the directory and the output. Never call `exec.Command` or `exec.LookPath` anywhere else in non-test code, because they read the real process's `PATH`. Pass `opts.Environ` through, and never use `os.Environ()`.
+Every command `internal/project` starts goes through the `tools` type in `internal/project/tools.go`. A `tools` value is bound to an environment and a directory. The pipeline makes one for the project root, and `in(dir)` returns one for another directory. It has four methods:
+
+- `require(name, advice)` returns an error when the tool isn't on `PATH`. The error says the tool is missing, followed by `advice`, which says how to install it. Use it in a check that runs before anything is written, as `checkViteplus` does.
+- `run(ctx, name, args...)` starts the command and waits for it.
+- `output(ctx, name, args...)` does the same and returns stdout.
+- `exitCode(ctx, highest, name, args...)` returns the exit code when it's from 0 to `highest`, for a command whose exit code is a result, such as `git merge-file`.
+
+Each finds the executable on the `PATH` of its environment and looks it up once. The errors of `run`, `output` and `exitCode` name the command, the directory and the output. The error of `require` names the missing tool and gives the advice. Never call `exec.Command` or `exec.LookPath` anywhere else in non-test code, because they read the real process's `PATH`, and never use `os.Environ()`. A step gets its `tools` as the `t` argument of its `run` function.
 
 To test a command sow starts, call `s.fakeTool("vp", script)` in the sandbox. It puts a shell script with that name first on the sandbox's `PATH`.
 
@@ -92,7 +127,7 @@ Each rule has a reason. The rule still applies when the reason seems not to.
 4. **Wrap errors with context using `%w`.** `fmt.Errorf("read the personal defaults file %s: %w", path, err)`. The message starts lowercase, has no trailing full stop, and says what sow was doing. Don't add context the inner error already has. `os` errors already contain the path.
 5. **An error the author will see tells them what to do next.** `user_name is missing: pass --user-name or set user_name in the personal defaults file`. Name the flag, the file or the command.
 6. **Report every problem at once when validating.** Collect errors and return `errors.Join(problems...)`, as `answers.Resolve` does. The author shouldn't fix one answer only to hit the next.
-7. **Check before you write.** Validate and render everything in memory first, then write files, then start the commands that change the project. `project.New` does this. A command that only reads the machine, such as `vp env doctor`, may run before anything is written, so sow can refuse early. A failure in validation or rendering must leave nothing on disk. A failure after writing has started, such as a follow-up step that fails, leaves the files in place so the author can fix the cause and run the command again.
+7. **Check before you write.** Validate and render everything in memory first, then write files, then start the commands that change the project. The pipeline in `internal/project/pipeline.go` does this. A command that only reads the machine, such as `vp env doctor`, may run before anything is written, so sow can refuse early. A failure in validation or rendering must leave nothing on disk. A failure after writing has started, such as a follow-up step that fails, leaves the files in place so the author can fix the cause and run the command again.
 8. **No new dependencies.** The module uses cobra, `huh` (`charm.land/huh/v2`) for prompts and a YAML library. `cmd/sow/main.go` also imports `github.com/charmbracelet/x/term`, which huh already depends on, to check whether stdin is a terminal. Anything else needs a ticket that names it. The standard library covers the rest: `slices`, `maps`, `strings`, `errors`, `os`, `io/fs`, `path/filepath`, `text/template`.
 9. **No package-level variables that change.** Package-level `var` is allowed only for values set once and never reassigned, such as a compiled `regexp` or the `presets` map. No `init()` functions.
 10. **No interface until two real implementations exist.** Don't add one for testing. Tests use the real file system in a temporary directory and real `git`. The one exception is `cli.Prompter`, because a test has no terminal to type into. Its only real implementation is `cli.TerminalPrompter`, and the ticket that added prompts named this seam.
@@ -101,7 +136,7 @@ Each rule has a reason. The rule still applies when the reason seems not to.
 13. **Use `filepath` for paths on disk and `path` for paths inside the template.** The template file system always uses forward slashes. Convert with `filepath.FromSlash` when writing.
 14. **Every exported name has a doc comment** that starts with the name and says what it does and what it returns on failure. Add a "why" sentence when the code would surprise a reader. Comments describe the code as it is now. Don't write what changed, and don't mention tickets.
 15. **Return early.** Handle the error or the special case, return, and keep the main path unindented. No `else` after a `return`.
-16. **Name things after the glossary.** `answers`, `preset`, `component`, `stack`, `followUpStep`. Read `GLOSSARY.md` and never use a word from its "Avoid" lines. Receivers are one letter (`a Answers`, `e Env`). No `utils`, `helpers` or `common` packages or files.
+16. **Name things after the glossary.** `answers`, `preset`, `component`, `stack`, `followUpSteps`. Read `GLOSSARY.md` and never use a word from its "Avoid" lines. Receivers are one letter (`a Answers`, `e Env`). No `utils`, `helpers` or `common` packages or files.
 17. **File modes are `0o755` for directories and `0o644` for files.**
 18. **No `//nolint`.** Fix the code. If a linter is wrong, stop and comment on the ticket.
 19. **Change only what the ticket needs.** Don't rename, reformat or reorganise code the ticket doesn't touch. If you see a problem elsewhere, list it in the PR summary as a noticed problem.
@@ -114,6 +149,8 @@ Each rule has a reason. The rule still applies when the reason seems not to.
 There are three places to test. Don't test anywhere else unless your ticket names a new seam.
 
 - **`cli.Run`, through the sandbox** in `internal/cli/sandbox_test.go`. This is the default. A test creates a sandbox, runs `sow` with arguments, and checks the exit code, the output and the files. Everything in `answers` and `project` is tested this way.
+
+  The sandbox replaces the template through `Env.Template`. `cmd/sow/main.go` passes the embedded template, and so does the sandbox, unless a test calls `s.install(version, files)`. That makes sow run as `version` with `files` as an in-memory template. For `sow update`, `s.release(version, files)` commits `files` under `template/` in a local fixture git repo, tags the commit `v<version>` and points `SOW_REPO` at the repo, so the update fetches the old template without the network. `s.releasedProject` does both and creates the project. Most update tests use `s.cachedProject` instead, which writes the old template straight into the sandbox's cache (`s.cache`), so the update never fetches. Use the git fixture only for a test about fetching, such as the cache directory, a missing tag or `SOW_REPO`. The sandbox's default `SOW_REPO` is a path that doesn't exist, so a test that forgets `release` fails instead of reaching GitHub.
 
   The sandbox replaces the terminal through one seam, `Env.Prompter`. `cmd/sow/main.go` sets it only when stdin is a terminal, and the sandbox leaves it unset, so a plain `s.run` has no terminal. To answer prompts, call `s.terminal(map[string]string{"backend": "none"})` before the run. It returns a scripted prompter that answers by key and records each question in `asked`. A question the test didn't script acts as Ctrl+C.
 - **`render.Render`, with an in-memory template** (`fstest.MapFS`), in `internal/render/render_test.go`. Use it only for rules of the template format, such as what happens when two directories contain the same path.

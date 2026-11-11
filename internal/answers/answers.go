@@ -188,6 +188,20 @@ func (a Answers) Dirs() []string {
 	return dirs
 }
 
+// WithComponentsOff returns a copy of these answers in which each component
+// without an answer is None. An answers file written by an older release has
+// no entry for a component added since, and a template that reads that
+// component's answer needs a value for it.
+func (a Answers) WithComponentsOff() Answers {
+	filled := maps.Clone(a)
+	for _, q := range Questions() {
+		if _, ok := filled[q.Key]; q.Component && !ok {
+			filled[q.Key] = None
+		}
+	}
+	return filled
+}
+
 // TypeScriptOn reports whether these answers turn on a component with a
 // TypeScript stack, which needs Vite+ (ADR 0011).
 func (a Answers) TypeScriptOn() bool {

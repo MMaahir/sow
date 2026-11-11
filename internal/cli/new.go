@@ -2,14 +2,11 @@ package cli
 
 import (
 	"errors"
-	"io/fs"
-	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
 
-	"github.com/MMaahir/sow"
 	"github.com/MMaahir/sow/internal/answers"
 	"github.com/MMaahir/sow/internal/project"
 )
@@ -18,6 +15,7 @@ func newCommand(env Env) *cobra.Command {
 	var (
 		preset  string
 		noInput bool
+		github  bool
 	)
 	cmd := &cobra.Command{
 		Use:   "new <name>",
@@ -28,6 +26,8 @@ func newCommand(env Env) *cobra.Command {
 		"a named set of answers: "+strings.Join(answers.PresetNames(), ", "))
 	cmd.Flags().BoolVar(&noInput, "no-input", false,
 		"never ask questions; fail if an answer is missing")
+	cmd.Flags().BoolVar(&github, "github", false,
+		"create a public GitHub repo with gh, protect main and push the first commit")
 	for _, q := range answers.Questions() {
 		if q.Key != answers.ProjectName {
 			cmd.Flags().String(flagName(q.Key), "", q.Help)
@@ -58,8 +58,8 @@ func newCommand(env Env) *cobra.Command {
 		// that was given is invalid, or when the target directory exists:
 		// the author fixes the cause first. project.New repeats the
 		// directory check and reports it.
-		if !noInput && errors.Join(problems...) == nil &&
-			answers.CheckGiven(sources...) == nil && !targetExists(env.Dir, args[0]) {
+		if !noInput && errors.Join(problems...) == nil && answers.CheckGiven(sources...) == nil &&
+			project.CheckTarget(filepath.Join(env.Dir, args[0])) == nil {
 			typed, err := ask(cmd.Context(), env.Prompter, sources)
 			if err != nil {
 				return err
@@ -76,8 +76,9 @@ func newCommand(env Env) *cobra.Command {
 			Dir:      filepath.Join(env.Dir, resolved[answers.ProjectName]),
 			Answers:  resolved,
 			Version:  env.Version,
-			Template: sow.Template(),
+			Template: env.Template,
 			Environ:  env.Environ,
+			GitHub:   github,
 		})
 	}
 	return cmd
@@ -86,14 +87,6 @@ func newCommand(env Env) *cobra.Command {
 // flagName turns an answer key such as "user_name" into its flag, "user-name".
 func flagName(key string) string {
 	return strings.ReplaceAll(key, "_", "-")
-}
-
-// targetExists reports whether the project directory is already on disk, so
-// sow doesn't ask questions for a project it can't create. It checks the same
-// way project.New does.
-func targetExists(dir, name string) bool {
-	_, err := os.Lstat(filepath.Join(dir, name))
-	return !errors.Is(err, fs.ErrNotExist)
 }
 
 // personalDefaultsPath returns $XDG_CONFIG_HOME/sow/config.yml, or
