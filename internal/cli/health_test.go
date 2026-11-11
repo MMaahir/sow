@@ -2,6 +2,7 @@ package cli_test
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"maps"
 	"net"
@@ -346,7 +347,7 @@ func TestNewFrontendReactProjectHealth(t *testing.T) {
 
 		t.Run("the home page smoke test fails with the backend stopped", func(t *testing.T) {
 			s := s.in(t)
-			s.mustTool(".", "docker", "compose", "stop", "backend")
+			s.mustTool(".", "docker", s.compose("stop", "backend")...)
 
 			output, err := s.tool(".", "mise", "run", "e2e")
 
@@ -692,19 +693,30 @@ func (s *sandbox) chromiumInstalled() bool {
 	return err == nil
 }
 
-// composeUp builds and starts the demo project's Compose stack, and waits
-// until its services are healthy. It stops the stack when the test ends, even
-// when the test or the start fails.
+// composeUp builds and starts the demo project's Compose stack under the
+// sandbox's own project name, and waits until its services are healthy. It
+// removes the stack when the test ends, even when the test or the start fails.
 func (s *sandbox) composeUp() {
 	s.t.Helper()
 	s.t.Cleanup(func() {
 		// The test's context is cancelled before cleanup runs, so down needs one that isn't.
-		down := exec.CommandContext(context.WithoutCancel(s.t.Context()), "docker", "compose", "down")
+		down := exec.CommandContext(context.WithoutCancel(s.t.Context()), "docker", s.compose("down")...)
 		down.Dir = filepath.Join(s.dir, "demo")
 		down.Env = s.environ()
 		if output, err := down.CombinedOutput(); err != nil {
 			s.t.Errorf("docker compose down: %v\n%s", err, output)
 		}
 	})
-	s.mustTool(".", "docker", "compose", "up", "--build", "--wait")
+	s.mustTool(".", "docker", s.compose("up", "--build", "--wait")...)
+}
+
+// compose returns the arguments to docker for a docker compose command on
+// this sandbox's own Compose project. Every sandbox generates a directory
+// called demo, and a health sandbox inherits COMPOSE_PROJECT_NAME from the
+// real machine, so either default could name another stack. Compose takes -p
+// over both. The name comes from the sandbox's temporary directory, which is
+// unique to the test run, so a subtest's copy of the sandbox gets the same name.
+func (s *sandbox) compose(args ...string) []string {
+	sum := sha256.Sum256([]byte(s.dir))
+	return append([]string{"compose", "-p", fmt.Sprintf("sow-health-%x", sum[:6])}, args...)
 }
