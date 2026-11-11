@@ -43,6 +43,10 @@ func TestUpdateRejectsAnInvalidAnswersFile(t *testing.T) {
 			file: "sow_version: 1.2.3\nproject_name: demo\ndatabse: postgres\n",
 			want: []string{"databse is not an answer sow knows"},
 		},
+		"no sow_version": {
+			file: "project_name: demo\n",
+			want: []string{"sow_version is missing"},
+		},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {

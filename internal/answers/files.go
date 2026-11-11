@@ -56,7 +56,13 @@ func Read(path string) (string, Answers, error) {
 	}
 	version := recorded[versionKey]
 	delete(recorded, versionKey)
-	if err := CheckGiven(recorded); err != nil {
+	var problems []error
+	if version == "" {
+		problems = append(problems, fmt.Errorf(
+			"%s is missing: set it to the sow version that created the project", versionKey))
+	}
+	problems = append(problems, CheckGiven(recorded))
+	if err := errors.Join(problems...); err != nil {
 		return "", nil, fmt.Errorf("check the answers file %s: %w", path, err)
 	}
 	return version, recorded, nil
