@@ -43,34 +43,32 @@ func (p TerminalPrompter) Ask(ctx context.Context, q answers.Question) (string, 
 	return value, nil
 }
 
-// ask returns the answers the author types for every question that no source
-// answers. Validation happens later in answers.Resolve, as for a flag.
+// ask returns the answers the author types for the questions that
+// answers.Settle lists as unanswered. It settles again after each answer, so
+// a question whose needed component the author turned off isn't asked.
+// Validation happens afterwards in answers.Settle, as for a flag.
 func ask(ctx context.Context, prompter Prompter, sources []answers.Answers) (answers.Answers, error) {
-	var missing []answers.Question
-	for _, q := range answers.Questions() {
-		if !slices.ContainsFunc(sources, func(a answers.Answers) bool { _, ok := a[q.Key]; return ok }) {
-			missing = append(missing, q)
-		}
-	}
 	typed := answers.Answers{}
-	if len(missing) == 0 {
-		return typed, nil
-	}
-	if prompter == nil {
-		keys := make([]string, 0, len(missing))
-		for _, q := range missing {
-			keys = append(keys, q.Key)
+	known := append(slices.Clone(sources), typed)
+	for {
+		unanswered := answers.Settle(known...).Unanswered
+		if len(unanswered) == 0 {
+			return typed, nil
 		}
-		return nil, fmt.Errorf("stdin isn't a terminal, so sow can't ask for %s: "+
-			"pass --no-input and give answers with flags, a preset or the personal defaults file",
-			strings.Join(keys, ", "))
-	}
-	for _, q := range missing {
+		if prompter == nil {
+			var keys []string
+			for _, q := range unanswered {
+				keys = append(keys, q.Key)
+			}
+			return nil, fmt.Errorf("stdin isn't a terminal, so sow can't ask for %s: "+
+				"pass --no-input and give answers with flags, a preset or the personal defaults file",
+				strings.Join(keys, ", "))
+		}
+		q := unanswered[0]
 		value, err := prompter.Ask(ctx, q)
 		if err != nil {
 			return nil, fmt.Errorf("ask for %s: %w", q.Key, err)
 		}
 		typed[q.Key] = value
 	}
-	return typed, nil
 }

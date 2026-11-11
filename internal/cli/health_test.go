@@ -1,16 +1,22 @@
 package cli_test
 
 import (
+	"context"
+	"crypto/sha256"
 	"fmt"
+	"maps"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/MMaahir/sow/internal/answers"
 )
 
 // newHealthSandbox returns a sandbox for a generated project health test. Its
@@ -282,8 +288,372 @@ func TestNewBackendTSProjectHealth(t *testing.T) {
 			t.Skip("docker isn't installed: install it to run this test")
 		}
 
-		s.mustTool("backend", "docker", "build", ".")
+		// The build context is the project root, because the package's
+		// manifest reads its Vite+ version from the root pnpm catalog.
+		s.mustTool(".", "docker", "build", "--file", "backend/Dockerfile", ".")
 	})
+}
+
+func TestNewFrontendReactProjectHealth(t *testing.T) {
+	s := newHealthSandbox(t, "mise", "vp", "node")
+	s.newProject("--backend", "ts", "--frontend", "react")
+	s.mustTool(".", "mise", "install")
+
+	t.Run("the root check task passes", func(t *testing.T) {
+		s := s.in(t)
+		s.mustTool(".", "mise", "run", "check")
+	})
+
+	t.Run("lint, test and build pass in the frontend", func(t *testing.T) {
+		s := s.in(t)
+		for _, task := range []string{"lint", "build"} {
+			s.mustTool("frontend", "mise", "run", task)
+		}
+		if !s.exists("demo/frontend/dist/index.html") {
+			t.Error("mise run build wrote no frontend/dist/index.html")
+		}
+
+		output := s.mustTool("frontend", "mise", "run", "test", "--reporter=verbose")
+
+		wantContains(t, output,
+			"the starter route shows the status from GET /api/healthz",
+			"a route that doesn't exist shows the not-found view")
+	})
+
+	t.Run("e2e fails within a minute and names the address when nothing listens there", func(t *testing.T) {
+		s := s.in(t)
+		address := fmt.Sprintf("http://127.0.0.1:%d", freePort(t))
+		s.edit("demo/.env", func(content string) string {
+			return strings.Replace(content, "E2E_BASE_URL=http://localhost:8080", "E2E_BASE_URL="+address, 1)
+		})
+		start := time.Now()
+
+		output, err := s.tool(".", "mise", "run", "e2e")
+
+		if err == nil {
+			t.Fatalf("mise run e2e passed with nothing listening at %s:\n%s", address, output)
+		}
+		if elapsed := time.Since(start); elapsed > time.Minute {
+			t.Errorf("mise run e2e took %s to fail, want under a minute", elapsed)
+		}
+		wantContains(t, output, "nothing answers at "+address)
+	})
+
+	t.Run("the smoke tests pass against the Compose stack", func(t *testing.T) {
+		s := s.in(t)
+		if !s.exists("demo/compose.yaml") {
+			t.Skip("compose.yaml doesn't exist yet: the author writes it")
+		}
+		if _, err := exec.LookPath("docker"); err != nil {
+			t.Skip("docker isn't installed: install it to run this test")
+		}
+		if !s.chromiumInstalled() {
+			t.Skip("Playwright's Chromium isn't installed: run pnpm exec playwright install --only-shell chromium in frontend/")
+		}
+		s.composeUp()
+
+		output := s.mustTool(".", "mise", "run", "e2e")
+
+		wantContains(t, output, "2 passed")
+
+		t.Run("the home page smoke test fails with the backend stopped", func(t *testing.T) {
+			s := s.in(t)
+			s.mustTool(".", "docker", s.compose("stop", "backend")...)
+
+			output, err := s.tool(".", "mise", "run", "e2e")
+
+			if err == nil {
+				t.Fatalf("mise run e2e passed with the backend stopped:\n%s", output)
+			}
+			_, failures, _ := strings.Cut(output, "1 failed")
+			wantContains(t, failures, "the home page shows the backend's health status")
+		})
+	})
+
+	t.Run("generate-client leaves a fresh project unchanged", func(t *testing.T) {
+		s := s.in(t)
+		s.mustTool("frontend", "mise", "run", "generate-client")
+
+		if changed := s.git("status", "--porcelain"); changed != "" {
+			t.Errorf("mise run generate-client changed the project:\n%s", changed)
+		}
+	})
+
+	t.Run("a new backend route changes the client and fails the freshness check", func(t *testing.T) {
+		s := s.in(t)
+		s.edit("demo/backend/src/app.ts", func(content string) string {
+			return strings.Replace(content,
+				`  .openapi(readyz, (c) => c.json({ status: "ok" as const }, 200));`,
+				`  .openapi(readyz, (c) => c.json({ status: "ok" as const }, 200))
+  .openapi(
+    createRoute({ method: "get", path: "/version", summary: "Version.", responses: statusResponse }),
+    (c) => c.json({ status: "ok" as const }, 200),
+  );`, 1)
+		})
+		// Editing with no change makes the sandbox put the generated files back when the test ends.
+		unchanged := func(content string) string { return content }
+		s.edit("demo/backend/openapi.json", unchanged)
+		s.edit("demo/frontend/src/client.gen.ts", unchanged)
+		s.mustTool("backend", "mise", "run", "openapi")
+
+		s.mustTool("frontend", "mise", "run", "generate-client")
+
+		if output, err := s.tool(".", "git", "diff", "--exit-code", "--", "frontend/src/client.gen.ts"); err == nil {
+			t.Errorf("git diff --exit-code passed after the backend gained a route:\n%s", output)
+		}
+		wantContains(t, s.read("demo/frontend/src/client.gen.ts"),
+			"export const getVersion = async", "export function useGetVersion", "`/api/version`")
+	})
+
+	t.Run("the root check regenerates the client before it type-checks a new endpoint's caller", func(t *testing.T) {
+		s := s.in(t)
+		s.edit("demo/backend/src/app.ts", func(content string) string {
+			return strings.Replace(content,
+				`  .openapi(readyz, (c) => c.json({ status: "ok" as const }, 200));`,
+				`  .openapi(readyz, (c) => c.json({ status: "ok" as const }, 200))
+  .openapi(
+    createRoute({
+      method: "get",
+      path: "/version",
+      summary: "Version.",
+      responses: statusResponse,
+    }),
+    (c) => c.json({ status: "ok" as const }, 200),
+  );`, 1)
+		})
+		// A real change updates the backend's test of its route list too.
+		s.edit("demo/backend/src/app.test.ts", func(content string) string {
+			return strings.Replace(content, `toEqual(["/healthz", "/readyz"])`, `toEqual(["/healthz", "/readyz", "/version"])`, 1)
+		})
+		unchanged := func(content string) string { return content }
+		s.edit("demo/backend/openapi.json", unchanged)
+		s.edit("demo/frontend/src/client.gen.ts", unchanged)
+		s.mustTool("backend", "mise", "run", "openapi")
+		// The starter route calls the new endpoint while the committed client doesn't have it yet.
+		s.edit("demo/frontend/src/routes/index.tsx", func(content string) string {
+			content = strings.Replace(content, `import { useGetHealthz } from "../client.gen";`,
+				`import { useGetHealthz, useGetVersion } from "../client.gen";`, 1)
+			return strings.Replace(content, "  const { data, isError } = useGetHealthz();",
+				"  const { data, isError } = useGetHealthz();\n  useGetVersion();", 1)
+		})
+
+		// The edits are already formatted, so the pre-commit hooks change no file.
+		s.mustTool(".", "mise", "run", "check")
+	})
+
+	t.Run("the Vite+ pin check passes", func(t *testing.T) {
+		s := s.in(t)
+		s.mustTool(".", "mise", "run", "check-vite-plus-pins")
+	})
+
+	t.Run("the working tree is clean after every task", func(t *testing.T) {
+		s := s.in(t)
+		if changed := s.git("status", "--porcelain"); changed != "" {
+			t.Errorf("the tasks left uncommitted files:\n%s", changed)
+		}
+	})
+
+	typeError := "export const wrong: number = \"text\";\n"
+	conditionalHook := `import { useState } from "react";
+
+export function Wrong({ on }: { on: boolean }) {
+  if (on) {
+    const [count] = useState(0);
+    return <p>{count}</p>;
+  }
+  return <p>off</p>;
+}
+`
+	for name, c := range map[string]struct{ file, content, want string }{
+		"a type error in a source file fails lint": {
+			file: "frontend/src/wrong.tsx", content: typeError, want: "TS2322",
+		},
+		"a type error in a test file fails lint": {
+			file: "frontend/src/wrong.test.tsx", content: typeError, want: "TS2322",
+		},
+		"a hook called conditionally fails lint": {
+			file: "frontend/src/wrong.tsx", content: conditionalHook, want: "rules-of-hooks",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s := s.in(t)
+			s.write(s.dir, "demo/"+c.file, c.content)
+			t.Cleanup(func() {
+				if err := os.Remove(filepath.Join(s.dir, "demo", c.file)); err != nil {
+					t.Error(err)
+				}
+			})
+
+			output, err := s.tool("frontend", "mise", "run", "lint")
+
+			if err == nil {
+				t.Fatalf("lint passed despite the problem in %s:\n%s", c.file, output)
+			}
+			wantContains(t, output, filepath.Base(c.file), c.want)
+		})
+	}
+
+	t.Run("the frontend image builds", func(t *testing.T) {
+		s := s.in(t)
+		if !s.exists("demo/frontend/Dockerfile") {
+			t.Skip("frontend/Dockerfile doesn't exist yet: the author writes it")
+		}
+		if _, err := exec.LookPath("docker"); err != nil {
+			t.Skip("docker isn't installed: install it to run this test")
+		}
+
+		// The build context is the project root, because the package's
+		// manifest reads its Vite+ version from the root pnpm catalog.
+		s.mustTool(".", "docker", "build", "--file", "frontend/Dockerfile", ".")
+	})
+}
+
+func TestNewWebTSProjectHealth(t *testing.T) {
+	s := newHealthSandbox(t, "mise", "vp", "node")
+	s.newProject("--preset", "web-ts")
+	s.mustTool(".", "mise", "install")
+
+	t.Run("the root check task passes", func(t *testing.T) {
+		s := s.in(t)
+		s.mustTool(".", "mise", "run", "check")
+	})
+
+	t.Run("the Vite+ pin check passes", func(t *testing.T) {
+		s := s.in(t)
+		s.mustTool(".", "mise", "run", "check-vite-plus-pins")
+	})
+
+	t.Run("the working tree is clean after every task", func(t *testing.T) {
+		s := s.in(t)
+		if changed := s.git("status", "--porcelain"); changed != "" {
+			t.Errorf("the tasks left uncommitted files:\n%s", changed)
+		}
+	})
+}
+
+func TestNewEveryCombinationProjectHealth(t *testing.T) {
+	if os.Getenv("SOW_TEST_ALL_COMBINATIONS") != "1" {
+		t.Skip("every combination of answers is slow to test: set SOW_TEST_ALL_COMBINATIONS=1 to run it")
+	}
+
+	for _, combination := range everyCombination() {
+		t.Run(combination.name, func(t *testing.T) {
+			tools := []string{"mise"}
+			if combination.answers.TypeScriptOn() {
+				tools = append(tools, "vp", "node")
+			}
+			s := newHealthSandbox(t, tools...)
+			s.newProject(combination.flags...)
+			s.mustTool(".", "mise", "install")
+
+			t.Run("the root check task passes", func(t *testing.T) {
+				s := s.in(t)
+				s.mustTool(".", "mise", "run", "check")
+			})
+
+			for _, component := range combination.on {
+				t.Run("lint, test and build pass in the "+component, func(t *testing.T) {
+					s := s.in(t)
+					for _, task := range []string{"lint", "test", "build"} {
+						s.mustTool(component, "mise", "run", task)
+					}
+				})
+			}
+
+			if combination.answers.TypeScriptOn() {
+				t.Run("the Vite+ pin check passes", func(t *testing.T) {
+					s := s.in(t)
+					s.mustTool(".", "mise", "run", "check-vite-plus-pins")
+				})
+			}
+
+			t.Run("the working tree is clean after every task", func(t *testing.T) {
+				s := s.in(t)
+				if changed := s.git("status", "--porcelain"); changed != "" {
+					t.Errorf("the tasks left uncommitted files:\n%s", changed)
+				}
+			})
+		})
+	}
+}
+
+func TestEveryCombinationListsEachCombinationValidationAccepts(t *testing.T) {
+	var got []string
+
+	for _, combination := range everyCombination() {
+		got = append(got, combination.name)
+	}
+
+	want := []string{
+		"backend=none,frontend=none",
+		"backend=ts,frontend=none",
+		"backend=ts,frontend=react",
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("combinations = %q, want %q", got, want)
+	}
+}
+
+// combination is one set of component answers for a generated project.
+type combination struct {
+	// name lists each answer as key=value, such as
+	// "backend=ts,frontend=react". It names the subtest.
+	name string
+	// answers holds the component answers.
+	answers answers.Answers
+	// flags passes the answers to sow new, such as "--backend", "ts".
+	flags []string
+	// on lists the components that are on. Each one renders into a
+	// directory of the same name.
+	on []string
+}
+
+// everyCombination returns every combination of component answers that
+// validation accepts, in the order of the questions and their choices. It
+// reads the questions, so a new component or stack joins the list with no
+// change here, and a combination a question's Needs rejects is left out.
+func everyCombination() []combination {
+	all := []answers.Answers{{}}
+	for _, q := range answers.Questions() {
+		if !q.Component {
+			continue
+		}
+		var next []answers.Answers
+		for _, partial := range all {
+			for _, choice := range q.Choices {
+				extended := maps.Clone(partial)
+				extended[q.Key] = choice
+				next = append(next, extended)
+			}
+		}
+		all = next
+	}
+
+	var combinations []combination
+	for _, a := range all {
+		rejected := slices.ContainsFunc(answers.Settle(a).Problems, func(p answers.Problem) bool {
+			return p.Kind != answers.MissingAnswer
+		})
+		if rejected {
+			continue
+		}
+		c := combination{answers: a}
+		var names []string
+		for _, q := range answers.Questions() {
+			value, ok := a[q.Key]
+			if !ok {
+				continue
+			}
+			names = append(names, q.Key+"="+value)
+			c.flags = append(c.flags, "--"+strings.ReplaceAll(q.Key, "_", "-"), value)
+			if value != answers.None {
+				c.on = append(c.on, q.Key)
+			}
+		}
+		c.name = strings.Join(names, ",")
+		combinations = append(combinations, c)
+	}
+	return combinations
 }
 
 // freePort returns a TCP port nothing is listening on.
@@ -317,4 +687,50 @@ func statusOf(t *testing.T, url string) int {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
+}
+
+// installLocation matches where Playwright installs its headless Chromium in
+// the output of playwright install --dry-run.
+var installLocation = regexp.MustCompile(`(?m)chromium-headless-shell.*\n\s*Install location:\s*(.+)$`)
+
+// chromiumInstalled reports whether the headless Chromium that the demo
+// project's Playwright runs is on this machine. Playwright prints where the
+// browser belongs without downloading it.
+func (s *sandbox) chromiumInstalled() bool {
+	s.t.Helper()
+	output := s.mustTool("frontend", "pnpm", "exec", "playwright", "install", "--dry-run", "--only-shell", "chromium")
+	match := installLocation.FindStringSubmatch(output)
+	if match == nil {
+		s.t.Fatalf("playwright install --dry-run printed no install location for chromium-headless-shell:\n%s", output)
+	}
+	_, err := os.Stat(strings.TrimSpace(match[1]))
+	return err == nil
+}
+
+// composeUp builds and starts the demo project's Compose stack under the
+// sandbox's own project name, and waits until its services are healthy. It
+// removes the stack when the test ends, even when the test or the start fails.
+func (s *sandbox) composeUp() {
+	s.t.Helper()
+	s.t.Cleanup(func() {
+		// The test's context is cancelled before cleanup runs, so down needs one that isn't.
+		down := exec.CommandContext(context.WithoutCancel(s.t.Context()), "docker", s.compose("down")...)
+		down.Dir = filepath.Join(s.dir, "demo")
+		down.Env = s.environ()
+		if output, err := down.CombinedOutput(); err != nil {
+			s.t.Errorf("docker compose down: %v\n%s", err, output)
+		}
+	})
+	s.mustTool(".", "docker", s.compose("up", "--build", "--wait")...)
+}
+
+// compose returns the arguments to docker for a docker compose command on
+// this sandbox's own Compose project. Every sandbox generates a directory
+// called demo, and a health sandbox inherits COMPOSE_PROJECT_NAME from the
+// real machine, so either default could name another stack. Compose takes -p
+// over both. The name comes from the sandbox's temporary directory, which is
+// unique to the test run, so a subtest's copy of the sandbox gets the same name.
+func (s *sandbox) compose(args ...string) []string {
+	sum := sha256.Sum256([]byte(s.dir))
+	return append([]string{"compose", "-p", fmt.Sprintf("sow-health-%x", sum[:6])}, args...)
 }

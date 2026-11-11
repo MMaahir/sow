@@ -4,12 +4,16 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io/fs"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/fstest"
 
+	"github.com/MMaahir/sow"
 	"github.com/MMaahir/sow/internal/answers"
 	"github.com/MMaahir/sow/internal/cli"
 )
@@ -32,6 +36,17 @@ type sandbox struct {
 	// realMachine makes runs inherit the real environment, so the real tools
 	// and their caches work. Only health tests set it.
 	realMachine bool
+	// version is the sow version the sandbox runs as. It's testVersion when
+	// empty.
+	version string
+	// template is the template sow renders. It's the real one unless a test
+	// calls install.
+	template fs.FS
+	// repo is the fixture git repo of sow that release creates, or "".
+	repo string
+	// ghProtocol is the git protocol the fake gh reports, "https" or "ssh".
+	// It's "https" when empty, gh's default.
+	ghProtocol string
 }
 
 // result is what one sow run produced.
@@ -45,7 +60,7 @@ type result struct {
 // personal question.
 func newSandbox(t *testing.T) *sandbox {
 	t.Helper()
-	s := &sandbox{t: t, dir: t.TempDir(), home: t.TempDir()}
+	s := &sandbox{t: t, dir: t.TempDir(), home: t.TempDir(), template: sow.Template()}
 	s.writePersonalDefaults("user_name: Test User\nuser_email: test@example.com\ngithub_user: test-user\n")
 	return s
 }
@@ -53,14 +68,25 @@ func newSandbox(t *testing.T) *sandbox {
 // run executes sow in the sandbox's working directory.
 func (s *sandbox) run(args ...string) result {
 	s.t.Helper()
+	return s.runIn(".", args...)
+}
+
+// runIn executes sow in dir, a directory inside the working directory such as
+// "demo".
+func (s *sandbox) runIn(dir string, args ...string) result {
+	s.t.Helper()
 	var stdout, stderr bytes.Buffer
 	env := cli.Env{
-		Stdin:   strings.NewReader(""),
-		Stdout:  &stdout,
-		Stderr:  &stderr,
-		Dir:     s.dir,
-		Environ: s.environ(),
-		Version: testVersion,
+		Stdin:    strings.NewReader(""),
+		Stdout:   &stdout,
+		Stderr:   &stderr,
+		Dir:      filepath.Join(s.dir, filepath.FromSlash(dir)),
+		Environ:  s.environ(),
+		Version:  testVersion,
+		Template: s.template,
+	}
+	if s.version != "" {
+		env.Version = s.version
 	}
 	if s.prompter != nil {
 		env.Prompter = s.prompter
@@ -83,6 +109,9 @@ func (s *sandbox) environ() []string {
 	base := []string{
 		"PATH=" + filepath.Join(s.home, "bin") + string(os.PathListSeparator) + os.Getenv("PATH"),
 		"HOME=" + s.home,
+		// A repo that doesn't exist, so sow update never reaches the network.
+		// release points SOW_REPO at a fixture repo.
+		"SOW_REPO=" + filepath.Join(s.home, "no-sow-repo"),
 	}
 	if s.realMachine {
 		// mise refuses to read a mise.toml it wasn't told to trust.
@@ -219,11 +248,136 @@ func (s *sandbox) exists(name string) bool {
 	return err == nil
 }
 
+// install makes the sandbox run as sow version with files as its template.
+// Each key of files is a path inside the template, such as
+// "base/README.md.tmpl".
+func (s *sandbox) install(version string, files map[string]string) {
+	s.t.Helper()
+	template := fstest.MapFS{}
+	for name, content := range files {
+		template[name] = &fstest.MapFile{Data: []byte(content)}
+	}
+	s.version = version
+	s.template = template
+}
+
+// release commits files under template/ in a fixture git repo of sow, tags
+// the commit v<version>, and points SOW_REPO at the repo. Each release
+// replaces the whole template/ directory. The repo is local, so sow update
+// fetches it without the network.
+func (s *sandbox) release(version string, files map[string]string) {
+	s.t.Helper()
+	if s.repo == "" {
+		s.repo = s.t.TempDir()
+		s.gitIn(s.repo, "init", "--initial-branch", "main")
+		s.extraEnv = append(s.extraEnv, "SOW_REPO="+s.repo)
+	}
+	if err := os.RemoveAll(filepath.Join(s.repo, "template")); err != nil {
+		s.t.Fatal(err)
+	}
+	for name, content := range files {
+		s.write(s.repo, "template/"+name, content)
+	}
+	s.gitIn(s.repo, "add", "--all")
+	s.gitIn(s.repo, "commit", "--message", "release "+version)
+	s.gitIn(s.repo, "tag", "v"+version)
+}
+
+// releasedProject creates the project demo with sow version and files as its
+// template, and releases that template in the fixture repo. Afterwards the
+// sandbox runs as sow testVersion with newFiles as its template.
+func (s *sandbox) releasedProject(version string, files, newFiles map[string]string) {
+	s.t.Helper()
+	s.release(version, files)
+	s.install(version, files)
+	s.mustRun("new", "demo", "--no-input")
+	s.install(testVersion, newFiles)
+}
+
+// cache writes files as the template of release version to the sandbox's
+// cache, ~/.cache/sow/templates/v<version>, where sow update looks before it
+// fetches. Each key of files is a path inside the template, such as
+// "base/README.md.tmpl". SOW_REPO still points nowhere, so an update that
+// misses the cache fails.
+func (s *sandbox) cache(version string, files map[string]string) {
+	s.t.Helper()
+	for name, content := range files {
+		s.write(s.home, ".cache/sow/templates/v"+version+"/"+name, content)
+	}
+}
+
+// cachedProject creates the project demo with sow version and files as its
+// template, and puts that template in the sandbox's cache, so sow update
+// never fetches it. Afterwards the sandbox runs as sow testVersion with
+// newFiles as its template.
+func (s *sandbox) cachedProject(version string, files, newFiles map[string]string) {
+	s.t.Helper()
+	s.cache(version, files)
+	s.install(version, files)
+	s.mustRun("new", "demo", "--no-input")
+	s.install(testVersion, newFiles)
+}
+
+// commit commits every change in the project directory.
+func (s *sandbox) commit() {
+	s.t.Helper()
+	s.git("add", "--all")
+	s.git("commit", "--message", "change the project")
+}
+
+// files returns every file under dir in the working directory, except those
+// in .git, by path relative to dir. A symlink's entry is "symlink to " and its
+// target, and files doesn't follow it.
+func (s *sandbox) files(dir string) map[string]string {
+	s.t.Helper()
+	root := filepath.Join(s.dir, filepath.FromSlash(dir))
+	files := map[string]string{}
+	err := filepath.WalkDir(root, func(name string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			if entry.Name() == ".git" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		relative, err := filepath.Rel(root, name)
+		if err != nil {
+			return err
+		}
+		if entry.Type()&fs.ModeSymlink != 0 {
+			target, err := os.Readlink(name)
+			if err != nil {
+				return err
+			}
+			files[filepath.ToSlash(relative)] = "symlink to " + target
+			return nil
+		}
+		content, err := os.ReadFile(name)
+		if err != nil {
+			return err
+		}
+		files[filepath.ToSlash(relative)] = string(content)
+		return nil
+	})
+	if err != nil {
+		s.t.Fatal(err)
+	}
+	return files
+}
+
 // git runs git in the project directory and returns its trimmed output.
 func (s *sandbox) git(args ...string) string {
 	s.t.Helper()
+	return s.gitIn(filepath.Join(s.dir, "demo"), args...)
+}
+
+// gitIn runs git in dir, an absolute path, and returns its trimmed output.
+func (s *sandbox) gitIn(dir string, args ...string) string {
+	s.t.Helper()
 	cmd := exec.CommandContext(s.t.Context(), "git", args...)
-	cmd.Dir = filepath.Join(s.dir, "demo")
+	cmd.Dir = dir
 	cmd.Env = s.environ()
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -240,4 +394,94 @@ func wantContains(t *testing.T, text string, parts ...string) {
 			t.Errorf("want %q in:\n%s", part, text)
 		}
 	}
+}
+
+// fakeGH puts a fake gh CLI on the sandbox's PATH and a bare repo in the
+// sandbox where git pushes in place of GitHub. It returns the bare repo's
+// path.
+//
+// The fake appends each call's arguments to a file that ghCalls reads, and
+// prefixes each with "before push" or "after push", which it reads from the
+// bare repo. "auth status" passes, "config get git_protocol" prints
+// s.ghProtocol, and every other call succeeds unless its arguments contain
+// failOn, when it prints an error and exits 1. An empty failOn never fails.
+//
+// The sandbox's git config sends https://github.com/ and git@github.com: to
+// the sandbox, so sow adds the real URL as the remote and the push still
+// stays on the machine.
+func (s *sandbox) fakeGH(failOn string) string {
+	s.t.Helper()
+	protocol := s.ghProtocol
+	if protocol == "" {
+		protocol = "https"
+	}
+	remotes := filepath.Join(s.home, "github")
+	bare := filepath.Join(remotes, "test-user", "demo.git")
+	s.write(s.home, "gitconfig", "[url \""+remotes+"/\"]\n"+
+		"\tinsteadOf = https://github.com/\n\tinsteadOf = git@github.com:\n")
+	cmd := exec.CommandContext(s.t.Context(), "git", "init", "--bare", "--quiet", "--initial-branch", "main", bare)
+	cmd.Env = s.environ()
+	if output, err := cmd.CombinedOutput(); err != nil {
+		s.t.Fatalf("git init --bare: %v\n%s", err, output)
+	}
+	s.fakeTool("gh", `when="before push"
+git --git-dir "`+bare+`" rev-parse --verify --quiet refs/heads/main >/dev/null && when="after push"
+echo "$when: $*" >> "`+s.ghCallsPath()+`"
+case "$*" in
+"auth status"*) exit 0 ;;
+"config get git_protocol"*) echo "`+protocol+`"; exit 0 ;;
+esac
+if [ -n "`+failOn+`" ]; then
+  case "$*" in
+  *"`+failOn+`"*) echo "HTTP 403: Resource not accessible" >&2; exit 1 ;;
+  esac
+fi
+exit 0`)
+	return bare
+}
+
+// ghCallsPath is the file where the fake gh records its calls.
+func (s *sandbox) ghCallsPath() string {
+	return filepath.Join(s.home, "gh-calls")
+}
+
+// ghCalls returns the calls the fake gh recorded, one per line, or nothing if
+// gh never ran.
+func (s *sandbox) ghCalls() []string {
+	s.t.Helper()
+	content, err := os.ReadFile(s.ghCallsPath())
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		s.t.Fatal(err)
+	}
+	return strings.Split(strings.TrimSuffix(string(content), "\n"), "\n")
+}
+
+// withEnvExample returns files with a .env.example and a .gitignore that
+// ignores .env, as the real template has.
+func withEnvExample(files map[string]string) map[string]string {
+	files = maps.Clone(files)
+	files["base/.env.example"] = "PORT=3000\n"
+	files["base/.gitignore"] = ".env\n"
+	return files
+}
+
+// withWorkspace returns files with a pnpm-workspace.yaml, which turns on the
+// follow-up step that runs vp install.
+func withWorkspace(files map[string]string) map[string]string {
+	files = maps.Clone(files)
+	files["base/pnpm-workspace.yaml"] = "packages: []\n"
+	return files
+}
+
+// withBackendTS returns files with the directories the ts backend selects,
+// backend-ts and typescript, so a project whose answers file records
+// backend: ts renders.
+func withBackendTS(files map[string]string) map[string]string {
+	files = maps.Clone(files)
+	files["backend-ts/backend/index.ts"] = "export {};\n"
+	files["typescript/package.json"] = "{}\n"
+	return files
 }

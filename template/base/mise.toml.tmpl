@@ -7,13 +7,21 @@ _.file = ".env"
 [tasks.check]
 description = "Run every check on the project"
 run = [
+[[- if ne .frontend "none" ]]
+  # The client is regenerated first, because the pre-commit hook type-checks code that may use a new endpoint.
+  "mise --cd frontend run generate-client",
+[[- end ]]
   "pre-commit run --all-files",
 [[- if ne .backend "none" ]]
   "mise --cd backend run lint",
   "mise --cd backend run test",
 [[- end ]]
+[[- if ne .frontend "none" ]]
+  "mise --cd frontend run lint",
+  "mise --cd frontend run test",
+[[- end ]]
 ]
-[[- if eq .backend "ts" ]]
+[[- if or (eq .backend "ts") (eq .frontend "react") ]]
 
 [tasks.check-vite-plus-pins]
 description = "Check that the Vite+ pins in pnpm-workspace.yaml match the installed Vite+"
@@ -22,4 +30,11 @@ run = "node scripts/check-vite-plus-pins.ts"
 [tasks.upgrade-vite-plus]
 description = "Re-pin the vite alias and Vitest to the installed vite-plus"
 run = "pnpm exec vp migrate --no-interactive"
+[[- end ]]
+[[- if ne .frontend "none" ]]
+
+[tasks.e2e]
+description = "Run the Playwright smoke tests against the app running at E2E_BASE_URL"
+dir = "{{config_root}}/frontend"
+run = "pnpm exec playwright test"
 [[- end ]]

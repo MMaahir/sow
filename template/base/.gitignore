@@ -3,3 +3,5 @@
 node_modules/
 dist/
 .vitest/
+.tanstack/
+test-results/

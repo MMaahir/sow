@@ -26,6 +26,10 @@ _Avoid_: profile, stack, flavour
 The file in a generated project that records the sow version and the answers it was rendered with. There's one per project.
 _Avoid_: config, state file
 
+**Settle**:
+To turn the answers that flags, a preset, the personal defaults, the prompts or the answers file give into one answer per question: the first source that has a key wins, a question no source answers takes its default, and every rule on the answers is checked. The result is the settled answers.
+_Avoid_: resolve, merge, validate (for the whole step)
+
 **Personal defaults**:
 The answers that describe the author and stay the same across projects: name, email and GitHub username.
 _Avoid_: settings, profile, user config

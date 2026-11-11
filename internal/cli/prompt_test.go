@@ -81,7 +81,7 @@ func TestNewAsksForTheBackendAsAChoiceWithNonePreselected(t *testing.T) {
 
 func TestNewRejectsAnInvalidTypedAnswer(t *testing.T) {
 	s := newSandbox(t)
-	s.terminal(map[string]string{"backend": "cobol"})
+	s.terminal(map[string]string{"backend": "cobol", "frontend": "none"})
 
 	got := s.run("new", "demo")
 
@@ -131,7 +131,11 @@ func TestNewRefusesToAskWithoutATerminal(t *testing.T) {
 	if got.code != 1 {
 		t.Errorf("exit code = %d, want 1", got.code)
 	}
-	wantContains(t, got.stderr, "isn't a terminal", "--no-input")
+	want := "sow: stdin isn't a terminal, so sow can't ask for backend: " +
+		"pass --no-input and give answers with flags, a preset or the personal defaults file\n"
+	if got.stderr != want {
+		t.Errorf("stderr = %q, want %q", got.stderr, want)
+	}
 	if s.exists("demo") {
 		t.Error("sow new created demo without a terminal or --no-input")
 	}
@@ -214,6 +218,37 @@ func TestNewRejectsAnInvalidGivenBackendBeforeAsking(t *testing.T) {
 	}
 }
 
+func TestNewRejectsAFrontendWithoutABackendBeforeAsking(t *testing.T) {
+	s := newSandbox(t)
+	s.removePersonalDefaults()
+	prompter := s.terminal(map[string]string{"user_name": "Ada Lovelace"})
+
+	got := s.run("new", "demo", "--backend", "none", "--frontend", "react")
+
+	if got.code != 1 {
+		t.Errorf("exit code = %d, want 1", got.code)
+	}
+	wantContains(t, got.stderr, "frontend needs a backend", "--backend ts")
+	if asked := prompter.askedKeys(); len(asked) != 0 {
+		t.Errorf("asked %v, want nothing", asked)
+	}
+	if s.exists("demo") {
+		t.Error("sow new created demo despite the frontend with no backend")
+	}
+}
+
+func TestNewRejectsAFrontendWithoutABackendWithoutATerminal(t *testing.T) {
+	s := newSandbox(t)
+	s.removePersonalDefaults()
+
+	got := s.run("new", "demo", "--backend", "none", "--frontend", "react")
+
+	if got.code != 1 {
+		t.Errorf("exit code = %d, want 1", got.code)
+	}
+	wantContains(t, got.stderr, "frontend needs a backend", "--backend ts")
+}
+
 func TestNewCancelledPromptCreatesNothing(t *testing.T) {
 	s := newSandbox(t)
 	s.terminal(map[string]string{})
@@ -226,5 +261,47 @@ func TestNewCancelledPromptCreatesNothing(t *testing.T) {
 	wantContains(t, got.stderr, "backend", "user aborted")
 	if s.exists("demo") {
 		t.Error("sow new created demo after the prompt was cancelled")
+	}
+}
+
+func TestNewAsksForTheFrontendAfterABackend(t *testing.T) {
+	s := newSandbox(t)
+	s.fakeTool("vp", fakeVP)
+	prompter := s.terminal(map[string]string{"backend": "ts", "frontend": "react"})
+
+	s.mustRun("new", "demo")
+
+	if got, want := prompter.askedKeys(), []string{"backend", "frontend"}; !slices.Equal(got, want) {
+		t.Fatalf("asked %v, want %v", got, want)
+	}
+	if got, want := prompter.asked[1].Choices, []string{"none", "react"}; !slices.Equal(got, want) {
+		t.Errorf("frontend choices = %v, want %v", got, want)
+	}
+	if got, want := prompter.asked[1].Default, "none"; got != want {
+		t.Errorf("frontend preselected = %q, want %q", got, want)
+	}
+	wantContains(t, s.read("demo/.sow-answers.yml"), "backend: ts\nfrontend: react\n")
+}
+
+func TestNewDoesntAskForAFrontendWithoutABackend(t *testing.T) {
+	cases := map[string]struct {
+		args []string
+		want []string
+	}{
+		"the author types none for the backend": {args: []string{}, want: []string{"backend"}},
+		"a flag turns the backend off":          {args: []string{"--backend", "none"}, want: []string{}},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			s := newSandbox(t)
+			prompter := s.terminal(map[string]string{"backend": "none"})
+
+			s.mustRun(append([]string{"new", "demo"}, c.args...)...)
+
+			if got := prompter.askedKeys(); !slices.Equal(got, c.want) {
+				t.Errorf("asked %v, want %v", got, c.want)
+			}
+			wantContains(t, s.read("demo/.sow-answers.yml"), "frontend: none\n")
+		})
 	}
 }
