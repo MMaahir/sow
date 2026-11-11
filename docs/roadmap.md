@@ -112,6 +112,7 @@ Next.js is never used for server code: no API routes. If it comes back later, it
 
 - Pre-1.0 tools are pinned exactly and updated through Renovate PRs that CI must pass. In generated projects the exact pin lives in the lockfile, and manifests use lower-bound ranges ([ADR 0007](adr/0007-pre-1-0-tools-are-pinned-and-gated.md)).
 - sow itself is built with Go, pinned in `mise.toml` and `go.mod`. `gofumpt` formats it and `golangci-lint` lints it. `mise run check` runs the build, the linter and the tests, and it is the gate for every agent PR.
+- The docs site is built with Zensical, a Python tool. mise pins it, along with the Python and uv that install it, and `mise run docs-build` builds the site from `docs/public/`. `mise run check` doesn't build the docs.
 - sow keeps its Go dependencies few: cobra for commands, `huh` for prompts and a YAML library. Tests use the standard library only.
 - TypeScript stacks use Vite+ wherever it fits. Vite+ installs Node and pnpm, mise runs the tasks, and pre-commit owns the hooks. Vite+ pins are the one exception to lockfile-only pins: Renovate bumps `vite-plus`, and `vp migrate` re-pins the rest ([ADR 0011](adr/0011-vite-plus-is-the-typescript-toolchain.md)).
 
@@ -131,7 +132,7 @@ Levels 1 and 2 run in `mise run test`. Level 3 is slow and needs `vp` and Docker
 Used only for sow's own docs site ([ADR 0008](adr/0008-aws-only-for-sows-own-infrastructure.md)). All of it is the author's work.
 
 - **`infra/bootstrap`:** applied once from your laptop with local state. It creates the S3 state bucket (with native locking), the GitHub OIDC provider, a read-only plan role that trusts PR runs, an apply role limited to `main` and tags, and a $1 budget alert. The alert doesn't cap spending.
-- **`infra/main`:** CI posts a plan on each PR (with `-lock=false`) and applies on merge. It manages the docs site (Material for MkDocs) on S3 behind CloudFront.
+- **`infra/main`:** CI posts a plan on each PR (with `-lock=false`) and applies on merge. It manages the docs site (Zensical) on S3 behind CloudFront.
 - **Teardown:** `infra/` documents how to `terraform destroy` both configs.
 
 ## Release plan
