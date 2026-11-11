@@ -1,5 +1,6 @@
-// Package answers defines the questions sow asks about a project and turns
-// flags, presets and personal defaults into one validated set of answers.
+// Package answers defines the questions sow asks about a project and settles
+// flags, presets, personal defaults and the answers file into one checked set
+// of answers.
 package answers
 
 import (
@@ -47,10 +48,9 @@ type Question struct {
 	// the global vp CLI from Vite+ (ADR 0011).
 	typeScript []string
 	// Needs is the key of a component answer that must be on for this one to
-	// be on. Empty means this answer depends on no other. CheckGiven rejects
-	// given answers that break the rule before sow asks anything, Resolve
-	// rejects the rest, and sow doesn't ask a question whose needed component
-	// is off.
+	// be on. Empty means this answer depends on no other. Settle reports a
+	// NeedsOff problem when the rule is broken, and leaves the question out
+	// of Unanswered while the needed component is off.
 	//
 	// It works for a component answer whose default is None and whose
 	// needed question comes earlier in Questions.
@@ -100,151 +100,181 @@ func checkProjectName(value string) error {
 	return nil
 }
 
-// CheckGiven reports every problem with the answers the sources give: an
-// unknown key, a value its question doesn't allow, and a value that fails the
-// question's own check. An empty value is a problem too, because the
-// source answered the question and sow won't ask it again. A question no
-// source answers isn't a problem: sow asks for it or falls back to its default. The returned error lists every
-// problem, or is nil.
+// ProblemKind names what is wrong with an answer.
+type ProblemKind int
+
+// The kinds of Problem that Settle reports.
+const (
+	// UnknownKey is a key that no question has.
+	UnknownKey ProblemKind = iota + 1
+	// EmptyAnswer is a source that gives an empty value. sow treats the
+	// question as answered, so it never asks it.
+	EmptyAnswer
+	// NotAChoice is a value outside its question's choices.
+	NotAChoice
+	// FailsCheck is a value that fails its question's own check.
+	FailsCheck
+	// MissingAnswer is a required question that no source answers.
+	MissingAnswer
+	// NeedsOff is a component that is on while the component it needs is
+	// off.
+	NeedsOff
+)
+
+// Problem is one thing wrong with a set of answers. It holds the facts a
+// command needs to word its advice, and no advice of its own, because the
+// fix depends on the command: sow new takes flags, and sow update takes an
+// edit to the answers file.
+type Problem struct {
+	// Key is the key of the answer the problem is about.
+	Key string
+	// Kind says what is wrong.
+	Kind ProblemKind
+	// Value is the bad value, for NotAChoice and FailsCheck.
+	Value string
+	// Choices lists the allowed values, for NotAChoice.
+	Choices []string
+	// Reason is why the value fails its question's check, for FailsCheck.
+	Reason string
+	// Needs is the key of the component that must be on, for NeedsOff.
+	Needs string
+	// NeededStacks lists the stacks that turn the Needs component on, for
+	// NeedsOff.
+	NeededStacks []string
+	// Askable reports that a question no source answers causes the
+	// problem, so asking it may fix the problem. That is a MissingAnswer,
+	// or a NeedsOff whose needed component took its default.
+	Askable bool
+}
+
+// Error states the problem without the fix. The one exception is a value
+// that isn't allowed: the message names the choices, or the reason its
+// question's check gives, because that holds for every command.
+func (p Problem) Error() string {
+	switch p.Kind {
+	case UnknownKey:
+		return p.Key + " is not an answer sow knows"
+	case EmptyAnswer:
+		return p.Key + " can't be empty"
+	case NotAChoice:
+		return fmt.Sprintf("%s can't be %q: choose one of %s", p.Key, p.Value, strings.Join(p.Choices, ", "))
+	case FailsCheck:
+		return fmt.Sprintf("%s can't be %q: %s", p.Key, p.Value, p.Reason)
+	case MissingAnswer:
+		return p.Key + " is missing"
+	case NeedsOff:
+		return fmt.Sprintf("%s needs a %s", p.Key, p.Needs)
+	}
+	return p.Key + " has an unknown problem"
+}
+
+// Settled is the result of Settle.
+type Settled struct {
+	// Answers holds an answer for every question. A question no source
+	// answers takes its default, or is empty when it has none. The answers
+	// are fit to render only when Problems is empty.
+	Answers Answers
+	// Problems lists every problem, in the order Settle finds them.
+	Problems []Problem
+	// Unanswered lists the questions that no source answers and that sow
+	// may ask, in the order of Questions. A question whose needed component
+	// is off isn't one, because only its default fits.
+	Unanswered []Question
+}
+
+// Settle settles the answers that sources give into one answer per question.
+// Sources are listed from the highest priority to the lowest, and the first
+// source that has a key wins. A question no source answers takes its
+// default.
 //
-// sow checks the answers it was given before it asks questions, so it never
-// asks about a project it can't create.
-func CheckGiven(sources ...Answers) error {
+// Settle reports every problem, not only the first: an unknown key and an
+// empty or invalid value in any source, even one that a higher source
+// overrides, a required question no source answers, and a component that is
+// on while the component it needs is off. It is the one place that applies
+// these rules, so sow new and sow update can't disagree on them.
+func Settle(sources ...Answers) Settled {
 	questions := Questions()
-	var problems []error
+	settled := Settled{Answers: Answers{}}
 	for _, source := range sources {
 		for _, key := range slices.Sorted(maps.Keys(source)) {
-			i := slices.IndexFunc(questions, func(q Question) bool { return q.Key == key })
-			if i < 0 {
-				problems = append(problems, fmt.Errorf("%s is not an answer sow knows", key))
-				continue
-			}
-			q := questions[i]
-			value := source[key]
-			switch {
-			case value == "":
-				problems = append(problems, fmt.Errorf("%s can't be empty: %s", q.Key, howToAnswer(q)))
-			case len(q.Choices) > 0 && !slices.Contains(q.Choices, value):
-				problems = append(problems, fmt.Errorf(
-					"%s can't be %q: choose one of %s", q.Key, value, strings.Join(q.Choices, ", ")))
-			case q.check != nil && q.check(value) != nil:
-				problems = append(problems, fmt.Errorf("%s can't be %q: %w", q.Key, value, q.check(value)))
+			if problem, ok := checkValue(questions, key, source[key]); ok {
+				settled.Problems = append(settled.Problems, problem)
 			}
 		}
 	}
-	// Two given answers can conflict, such as a frontend with the backend
-	// given as none. That is known before any question is asked.
-	given := firstGiven(sources)
-	for _, q := range questions {
-		_, keyGiven := given[q.Key]
-		_, neededGiven := given[q.Needs]
-		if !keyGiven || !neededGiven {
-			continue
-		}
-		if err := checkNeeds(q, given); err != nil {
-			problems = append(problems, err)
-		}
-	}
-	return errors.Join(problems...)
-}
 
-// firstGiven returns, for each key, the value from the first source that
-// gives it, which is the value Resolve would use.
-func firstGiven(sources []Answers) Answers {
-	given := Answers{}
-	for _, source := range sources {
-		for key, value := range source {
-			if _, ok := given[key]; !ok {
-				given[key] = value
-			}
-		}
-	}
-	return given
-}
-
-// checkNeeds reports a problem when q's component is on in values but the
-// component it needs is off. It names every stack of the needed component as
-// the fix, as in "pass --backend ts or --backend go".
-func checkNeeds(q Question, values Answers) error {
-	if q.Needs == "" || values[q.Key] == None || values[q.Needs] != None {
-		return nil
-	}
-	flag := "--" + strings.ReplaceAll(q.Needs, "_", "-") + " "
-	var stacks []string
-	for _, needed := range Questions() {
-		if needed.Key != q.Needs {
-			continue
-		}
-		for _, choice := range needed.Choices {
-			if choice != None {
-				stacks = append(stacks, flag+choice)
-			}
-		}
-	}
-	return fmt.Errorf("%s needs a %s: pass %s", q.Key, q.Needs, strings.Join(stacks, " or "))
-}
-
-// Resolve merges sources into one complete set of answers. Sources are listed
-// from the highest priority to the lowest, and the first one that has a key
-// wins. A question no source answers takes its default.
-//
-// The returned error lists every problem, not only the first: an unknown key,
-// a missing required answer, a value its question doesn't allow, and an answer
-// that is on while the component it needs is off.
-func Resolve(sources ...Answers) (Answers, error) {
-	questions := Questions()
-	resolved := Answers{}
-	var problems []error
-
-	if err := CheckGiven(sources...); err != nil {
-		problems = append(problems, err)
-	}
-
+	answered := map[string]bool{}
 	for _, q := range questions {
 		value := q.Default
-		answered := false
 		for _, source := range sources {
 			if given, ok := source[q.Key]; ok {
 				value = given
-				answered = true
+				answered[q.Key] = true
 				break
 			}
 		}
-		// An empty answer from a source is CheckGiven's problem to report.
-		switch {
-		case answered:
-		case value == "":
-			problems = append(problems, fmt.Errorf("%s is missing: %s", q.Key, howToAnswer(q)))
+		if !answered[q.Key] && value == "" {
+			settled.Problems = append(settled.Problems, Problem{Key: q.Key, Kind: MissingAnswer, Askable: true})
 		}
-		resolved[q.Key] = value
+		settled.Answers[q.Key] = value
 	}
 
-	// A conflict between two given answers is CheckGiven's problem to report.
-	given := firstGiven(sources)
 	for _, q := range questions {
-		_, keyGiven := given[q.Key]
-		_, neededGiven := given[q.Needs]
-		if keyGiven && neededGiven {
-			continue
+		needsOff := q.Needs != "" && settled.Answers[q.Needs] == None
+		if !answered[q.Key] && !needsOff {
+			settled.Unanswered = append(settled.Unanswered, q)
 		}
-		if err := checkNeeds(q, resolved); err != nil {
-			problems = append(problems, err)
+		if needsOff && settled.Answers[q.Key] != None && settled.Answers[q.Key] != "" {
+			settled.Problems = append(settled.Problems, Problem{
+				Key:          q.Key,
+				Kind:         NeedsOff,
+				Needs:        q.Needs,
+				NeededStacks: stacks(questions, q.Needs),
+				Askable:      !answered[q.Needs],
+			})
 		}
 	}
-
-	if len(problems) > 0 {
-		return nil, errors.Join(problems...)
-	}
-	return resolved, nil
+	return settled
 }
 
-// howToAnswer tells the author where to give the answer to q.
-func howToAnswer(q Question) string {
-	flag := "--" + strings.ReplaceAll(q.Key, "_", "-")
-	if q.Personal {
-		return fmt.Sprintf("pass %s or set %s in the personal defaults file", flag, q.Key)
+// checkValue returns the problem with value as the answer to key, and false
+// when there is none.
+func checkValue(questions []Question, key, value string) (Problem, bool) {
+	i := slices.IndexFunc(questions, func(q Question) bool { return q.Key == key })
+	if i < 0 {
+		return Problem{Key: key, Kind: UnknownKey}, true
 	}
-	return "pass " + flag
+	q := questions[i]
+	if value == "" {
+		return Problem{Key: key, Kind: EmptyAnswer}, true
+	}
+	if len(q.Choices) > 0 && !slices.Contains(q.Choices, value) {
+		return Problem{Key: key, Kind: NotAChoice, Value: value, Choices: q.Choices}, true
+	}
+	if q.check == nil {
+		return Problem{}, false
+	}
+	if err := q.check(value); err != nil {
+		return Problem{Key: key, Kind: FailsCheck, Value: value, Reason: err.Error()}, true
+	}
+	return Problem{}, false
+}
+
+// stacks returns the choices of the question with key that turn its
+// component on.
+func stacks(questions []Question, key string) []string {
+	var on []string
+	for _, q := range questions {
+		if q.Key != key {
+			continue
+		}
+		for _, choice := range q.Choices {
+			if choice != None {
+				on = append(on, choice)
+			}
+		}
+	}
+	return on
 }
 
 // Dirs returns the template directories these answers select: "base", then one

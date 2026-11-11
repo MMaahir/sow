@@ -16,7 +16,7 @@ import (
 type Options struct {
 	// Dir is where the project goes. It must not exist yet.
 	Dir string
-	// Answers must come from answers.Resolve.
+	// Answers must come from answers.Settle, with no problems.
 	Answers answers.Answers
 	// Version is the sow release recorded in the answers file.
 	Version string

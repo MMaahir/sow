@@ -48,14 +48,18 @@ func Marshal(version string, a Answers) ([]byte, error) {
 }
 
 // Read reads the answers file at path and returns the sow version it records
-// and its answers. It checks the answers with CheckGiven, the check sow new
-// uses. The returned error wraps fs.ErrNotExist when the file is missing and
-// names the file when it isn't valid YAML. Otherwise it lists every problem
-// with the contents: a missing sow_version, an unknown key, an invalid
-// answer and a missing answer that isn't a component.
+// and its answers. It settles the answers with Settle, the function sow new
+// uses, and words each problem's fix for sow update. The returned error wraps
+// fs.ErrNotExist when the file is missing and names the file when it isn't
+// valid YAML. Otherwise it lists every problem with the contents: a missing
+// sow_version, an unknown key, an invalid answer, a missing answer that isn't
+// a component, and a component that is on while the component it needs is
+// off.
 //
-// A component the file doesn't answer isn't a problem, because an answers
-// file written by an older release has no entry for a component added since.
+// A component the file doesn't answer is off, because an answers file
+// written by an older release has no entry for a component added since (ADR
+// 0012). Read returns the answers as the file records them, without that
+// component, so sow update writes the file back with the same entries.
 func Read(path string) (string, Answers, error) {
 	content, err := os.ReadFile(path)
 	if err != nil {
@@ -72,22 +76,29 @@ func Read(path string) (string, Answers, error) {
 		problems = append(problems, fmt.Errorf(
 			"%s is missing: set it to the sow version that created the project", versionKey))
 	}
-	// An empty answer is reported as missing here, with advice for an
-	// existing project, so CheckGiven doesn't also give sow new's advice.
-	given := maps.Clone(recorded)
-	for _, q := range Questions() {
-		if value, ok := recorded[q.Key]; (!ok || value == "") && !q.Component {
-			problems = append(problems, fmt.Errorf(
-				"%s is missing from %s: add it with the value the project was created with, "+
-					"commit the file, then run sow update again", q.Key, FileName))
-			delete(given, q.Key)
-		}
+	for _, problem := range Settle(recorded.WithComponentsOff()).Problems {
+		problems = append(problems, adviseUpdate(problem))
 	}
-	problems = append(problems, CheckGiven(given))
 	if err := errors.Join(problems...); err != nil {
 		return "", nil, fmt.Errorf("check the answers file %s: %w", path, err)
 	}
 	return version, recorded, nil
+}
+
+// adviseUpdate words the fix for a problem in the answers file. The author
+// fixes the file by hand, commits it and runs sow update again, so the
+// advice never names a flag.
+func adviseUpdate(p Problem) error {
+	const again = "commit the file, then run sow update again"
+	switch p.Kind {
+	case EmptyAnswer, MissingAnswer:
+		return fmt.Errorf("%s is missing from %s: add it with the value the project was created with, %s",
+			p.Key, FileName, again)
+	case NeedsOff:
+		return fmt.Errorf("%w: set %s to %s in %s, %s",
+			p, p.Needs, strings.Join(p.NeededStacks, " or "), FileName, again)
+	}
+	return p
 }
 
 // ReadPersonalDefaults reads the personal defaults file at path. A missing

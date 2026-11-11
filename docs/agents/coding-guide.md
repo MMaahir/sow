@@ -25,13 +25,16 @@ Copy the existing code for each of these. Don't invent a second way.
 ### Add an answer
 
 1. Add one `Question` to the list in `Questions()` in `internal/answers/answers.go`. Put it where it should appear in the answers file.
-2. That's all the wiring. The `--flag`, the validation, the answers file entry and the template value `[[ .your_key ]]` all come from that entry.
-3. If a component only makes sense when another component is on, set `Needs` to that component's key, as `frontend` does with `Needs: "backend"`. sow then rejects the answer while that component is `none`, before asking anything when both answers were given, with a message that names the flag to pass. It doesn't ask the question when the needed component is off. Don't write a second check. Add tests like `TestNewRejectsAFrontendWithoutABackend` and `TestNewRejectsAFrontendWithoutABackendBeforeAsking`.
+2. That's all the wiring. The `--flag`, the prompt, the validation, the answers file entry and the template value `[[ .your_key ]]` all come from that entry. `answers.Settle` applies every rule to the answers for both `sow new` and `sow update`: the first source that has a key wins, a question no source answers takes its `Default`, and a value must be one of `Choices` and pass `check`. Don't write a check anywhere else.
+3. To allow only some values, set `Choices`. For a rule a list can't express, set `check` to a function shaped like `checkProjectName`. Its error says what a valid value looks like and names no flag or file, because both commands print it.
+4. If a component only makes sense when another component is on, set `Needs` to that component's key, as `frontend` does with `Needs: "backend"`. `Settle` then reports a `NeedsOff` problem while that component is `none`, and leaves the question out of `Unanswered`, so `sow new` doesn't ask it. Each command words the fix: `sow new` says "pass --backend ts", and `sow update` says "set backend to ts in .sow-answers.yml". Don't write a second check. Add tests like `TestNewRejectsAFrontendWithoutABackend`, `TestNewRejectsAFrontendWithoutABackendBeforeAsking` and `TestUpdateRejectsAnAnswersFileWithAFrontendAndNoBackend`.
 
    `Needs` works only for a component answer whose default is `none`, and the needed question must come earlier in `Questions()`. A text answer, or a question that comes before the one it needs, needs more code. Stop and comment on the ticket.
-4. Add tests in `internal/cli/new_test.go`: the default is recorded, the flag is recorded, a bad value is rejected and the error lists the choices.
-5. Update the expected file in `TestNewWritesTheAnswersFile`.
-6. If it's a component answer, set it to `none` in the `minimal` preset, so the preset still turns no components on and `sow new --preset minimal` asks nothing about it.
+
+   `Settle` never words a fix. A new kind of problem needs a `ProblemKind`, a case in `Problem.Error`, and its fix in `adviseNew` in `internal/cli/new.go` and `adviseUpdate` in `internal/answers/files.go`. That is more than adding an answer, so stop and comment on the ticket first.
+5. Add tests in `internal/cli/new_test.go`: the default is recorded, the flag is recorded, a bad value is rejected and the error lists the choices.
+6. Update the expected file in `TestNewWritesTheAnswersFile`.
+7. If it's a component answer, set it to `none` in the `minimal` preset, so the preset still turns no components on and `sow new --preset minimal` asks nothing about it.
 
 Every answer is a string. A component answer has `Component: true`, and its value is a stack name or `none`. That holds for every component, including one with a single stack: `database` is `none` or `postgres`, never `true` or `false`.
 
@@ -130,7 +133,7 @@ Each rule has a reason. The rule still applies when the reason seems not to.
 3. **Never drop an error.** Every returned error is checked. `_, _ = fmt.Fprintf(env.Stderr, ...)` is the only allowed discard, because nothing can be done when printing an error fails.
 4. **Wrap errors with context using `%w`.** `fmt.Errorf("read the personal defaults file %s: %w", path, err)`. The message starts lowercase, has no trailing full stop, and says what sow was doing. Don't add context the inner error already has. `os` errors already contain the path.
 5. **An error the author will see tells them what to do next.** `user_name is missing: pass --user-name or set user_name in the personal defaults file`. Name the flag, the file or the command.
-6. **Report every problem at once when validating.** Collect errors and return `errors.Join(problems...)`, as `answers.Resolve` does. The author shouldn't fix one answer only to hit the next.
+6. **Report every problem at once when validating.** Collect errors and return `errors.Join(problems...)`, as `answers.Read` does. The author shouldn't fix one answer only to hit the next.
 7. **Check before you write.** Validate and render everything in memory first, then write files, then start the commands that change the project. The pipeline in `internal/project/pipeline.go` does this. A command that only reads the machine, such as `vp env doctor`, may run before anything is written, so sow can refuse early. A failure in validation or rendering must leave nothing on disk. A failure after writing has started, such as a follow-up step that fails, leaves the files in place so the author can fix the cause and run the command again.
 8. **No new dependencies.** The module uses cobra, `huh` (`charm.land/huh/v2`) for prompts and a YAML library. `cmd/sow/main.go` also imports `github.com/charmbracelet/x/term`, which huh already depends on, to check whether stdin is a terminal. Anything else needs a ticket that names it. The standard library covers the rest: `slices`, `maps`, `strings`, `errors`, `os`, `io/fs`, `path/filepath`, `text/template`.
 9. **No package-level variables that change.** Package-level `var` is allowed only for values set once and never reassigned, such as a compiled `regexp` or the `presets` map. No `init()` functions.

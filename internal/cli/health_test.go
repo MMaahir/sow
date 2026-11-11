@@ -631,7 +631,10 @@ func everyCombination() []combination {
 
 	var combinations []combination
 	for _, a := range all {
-		if answers.CheckGiven(a) != nil {
+		rejected := slices.ContainsFunc(answers.Settle(a).Problems, func(p answers.Problem) bool {
+			return p.Kind != answers.MissingAnswer
+		})
+		if rejected {
 			continue
 		}
 		c := combination{answers: a}
