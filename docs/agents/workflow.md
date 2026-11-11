@@ -151,10 +151,10 @@ When a stronger model hands an easy ticket to a smaller one, the brief is the ti
 
 A session that builds several tickets at once, as the `implement-spec` skill describes, hands each ticket to a separate agent. The agent's brief names the ticket, the integration branch and "orchestrated mode", plus anything specific to that ticket. Orchestrated mode changes sections 3 to 6 like this:
 
-- **Branch.** Start from the tip of the integration branch the brief names, not `main`: `git fetch origin && git switch -c <type>/<issue>-<slug> origin/<integration branch>`.
-- **Health tests.** If the TypeScript health tests need a `vp` and the machine has none, the brief gives a `PATH` to use. Without one, `mise run test-health` fails on the missing tool. Report that, and don't count the run as passing.
-- **Review and merge.** Do step 1 of section 6, the self-review, and put its result in your report instead of a PR comment. Don't open a PR, don't ask another model to review, and don't merge. The orchestrator does those.
-- **Finish.** Commit, push the branch, then send the report as your last message, after the push has finished. The report gives the branch, the commit hashes, each acceptance criterion with the test that covers it, the self-review result, every decision the ticket left open, and anything you couldn't do.
+- Branch. Start from the tip of the integration branch the brief names, not `main`: `git fetch origin && git switch -c <type>/<issue>-<slug> origin/<integration branch>`.
+- Health tests. If the TypeScript health tests need a `vp` and the machine has none, the brief gives a `PATH` to use. Without one, `mise run test-health` fails on the missing tool. Report that, and don't count the run as passing.
+- Review and merge. Review your own diff against the integration branch, `git diff origin/<integration branch>...HEAD`, before you push. Go through the ticket's acceptance criteria one at a time and name the test that covers each, confirming it would fail without your change. Then go through "Before you commit" in the coding guide and each numbered rule in its sections 3, 4 and 5. Fix what you find and run `mise run check`. Put what you found and fixed in your report. Don't open a PR, don't post a PR comment, don't ask another model to review, and don't merge. The orchestrator does those.
+- Finish. Commit, push the branch, then send the report as your last message, after the push has finished. The report gives the branch, the commit hashes, each acceptance criterion with the test that covers it, the self-review result, every decision the ticket left open, and anything you couldn't do.
 
 ## 10. Writing tickets
 

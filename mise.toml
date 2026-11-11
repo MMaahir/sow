@@ -1,6 +1,7 @@
 [tools]
 go = "1.27.3"
 golangci-lint = "2.15.0"
+pre-commit = "4.7.0"
 # Zensical builds the docs site. mise installs it with uv, and uv runs it on
 # the pinned Python, so a machine needs neither of them beforehand.
 python = "3.14.10"
