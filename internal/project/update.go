@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/MMaahir/sow/internal/answers"
@@ -40,7 +41,9 @@ type UpdateOptions struct {
 // Update brings the project in opts.Dir from the template of release
 // opts.From to opts.Template, and records opts.To in the answers file. It
 // refuses a project that isn't a git repo or has uncommitted or untracked
-// files, so git reset --hard && git clean -fd can always undo the update. It
+// files, so git reset --hard && git clean -fd can always undo the update. For
+// the same reason it refuses a project where a file it would read or write,
+// or a directory above one, is a symlink. It
 // fetches the old template from opts.Repo unless opts.CacheDir already has it,
 // renders the old and the new template with the project's answers, merges
 // each file with git merge-file, and runs the follow-up steps. It never
@@ -75,6 +78,9 @@ func Update(ctx context.Context, opts UpdateOptions) ([]string, error) {
 		return nil, err
 	}
 
+	if err := checkNoSymlinks(opts.Dir, oldRender, newRender); err != nil {
+		return nil, err
+	}
 	changes, err := planUpdate(opts.Dir, oldRender, newRender)
 	if err != nil {
 		return nil, err
@@ -195,6 +201,58 @@ func cacheTemplate(ctx context.Context, opts UpdateOptions, tag, fetch, cached s
 		return fmt.Errorf("cache the template: %w", err)
 	}
 	return nil
+}
+
+// checkNoSymlinks returns an error that names every symlink in the project
+// in dir that Update would read or write through: a path of either render,
+// the answers file, or a directory above one of them. Writing through a
+// symlink would change a file outside the project, which git reset --hard
+// can't restore.
+func checkNoSymlinks(dir string, oldRender, newRender []render.File) error {
+	names := []string{answers.FileName}
+	for _, file := range slices.Concat(oldRender, newRender) {
+		names = append(names, file.Path)
+	}
+	var links []string
+	for _, name := range names {
+		link, err := symlinkIn(dir, name)
+		if err != nil {
+			return err
+		}
+		if link != "" && !slices.Contains(links, link) {
+			links = append(links, link)
+		}
+	}
+	slices.Sort(links)
+	var problems []error
+	for _, link := range links {
+		problems = append(problems, fmt.Errorf("%s is a symbolic link, and sow update won't write through it, "+
+			"because git reset --hard can't restore the file it points to: "+
+			"replace the link with the file or directory it points to, commit it, then run sow update again", link))
+	}
+	return errors.Join(problems...)
+}
+
+// symlinkIn returns the first part of name, a path relative to root with
+// forward slashes, that is a symlink in root, such as "docs" for
+// "docs/guide.md". It returns "" when no part is a symlink, including when a
+// part doesn't exist.
+func symlinkIn(root, name string) (string, error) {
+	parts := strings.Split(name, "/")
+	for i := range parts {
+		part := path.Join(parts[:i+1]...)
+		info, err := os.Lstat(filepath.Join(root, filepath.FromSlash(part)))
+		if errors.Is(err, fs.ErrNotExist) {
+			return "", nil
+		}
+		if err != nil {
+			return "", err
+		}
+		if info.Mode()&fs.ModeSymlink != 0 {
+			return part, nil
+		}
+	}
+	return "", nil
 }
 
 // changeAction is what Update does to one file of the project.

@@ -308,7 +308,8 @@ func (s *sandbox) commit() {
 }
 
 // files returns every file under dir in the working directory, except those
-// in .git, by path relative to dir.
+// in .git, by path relative to dir. A symlink's entry is "symlink to " and its
+// target, and files doesn't follow it.
 func (s *sandbox) files(dir string) map[string]string {
 	s.t.Helper()
 	root := filepath.Join(s.dir, filepath.FromSlash(dir))
@@ -323,11 +324,19 @@ func (s *sandbox) files(dir string) map[string]string {
 			}
 			return nil
 		}
-		content, err := os.ReadFile(name)
+		relative, err := filepath.Rel(root, name)
 		if err != nil {
 			return err
 		}
-		relative, err := filepath.Rel(root, name)
+		if entry.Type()&fs.ModeSymlink != 0 {
+			target, err := os.Readlink(name)
+			if err != nil {
+				return err
+			}
+			files[filepath.ToSlash(relative)] = "symlink to " + target
+			return nil
+		}
+		content, err := os.ReadFile(name)
 		if err != nil {
 			return err
 		}

@@ -722,3 +722,58 @@ func TestUpdateRefusesABranchNamedLikeTheRecordedTag(t *testing.T) {
 		t.Errorf("sow update changed the project:\n%s", got)
 	}
 }
+
+func TestUpdateRefusesToWriteThroughASymlink(t *testing.T) {
+	tests := map[string]struct {
+		link   string
+		target string
+		want   string
+	}{
+		"a file":             {link: "README.md", target: "outside/README.md", want: "README.md is a symbolic link"},
+		"a parent directory": {link: "docs", target: "outside", want: "docs is a symbolic link"},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			s := newSandbox(t)
+			withDocs := maps.Clone(templateAt100)
+			withDocs["base/docs/guide.md"] = "guide\n"
+			newWithDocs := maps.Clone(templateAt123)
+			newWithDocs["base/docs/guide.md"] = "guide, from sow 1.2.3\n"
+			s.releasedProject("1.0.0", withDocs, newWithDocs)
+			outside := map[string]string{"README.md": s.read("demo/README.md"), "guide.md": "guide\n"}
+			for name, content := range outside {
+				s.write(s.home, "outside/"+name, content)
+			}
+			if err := os.RemoveAll(filepath.Join(s.dir, "demo", tt.link)); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(filepath.Join(s.home, tt.target), filepath.Join(s.dir, "demo", tt.link)); err != nil {
+				t.Fatal(err)
+			}
+			s.commit()
+			before := s.files("demo")
+
+			got := s.runIn("demo", "update")
+
+			if got.code != 1 {
+				t.Errorf("exit code = %d, want 1", got.code)
+			}
+			wantContains(t, got.stderr, tt.want, "replace the link")
+			if got, want := s.files("demo"), before; !maps.Equal(got, want) {
+				t.Errorf("project = %q\nwant it unchanged: %q", got, want)
+			}
+			if got := s.git("status", "--porcelain"); got != "" {
+				t.Errorf("sow update changed the project:\n%s", got)
+			}
+			for name, want := range outside {
+				content, err := os.ReadFile(filepath.Join(s.home, "outside", name))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if string(content) != want {
+					t.Errorf("outside/%s = %q, want it untouched: %q", name, content, want)
+				}
+			}
+		})
+	}
+}
