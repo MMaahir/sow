@@ -51,6 +51,14 @@ func TestUpdateRejectsAnInvalidAnswersFile(t *testing.T) {
 			file: "sow_version: 1.2.3\nproject_name: demo\nbackend: rails\n",
 			want: []string{`backend can't be "rails": choose one of none, ts`},
 		},
+		"several problems at once": {
+			file: "project_name: demo\ndatabse: postgres\nbackend: rails\n",
+			want: []string{
+				"sow_version is missing",
+				"databse is not an answer sow knows",
+				`backend can't be "rails": choose one of none, ts`,
+			},
+		},
 		"invalid YAML": {
 			file: "sow_version: 1.2.3\nproject_name: [demo\n",
 			want: []string{"read the answers file", ".sow-answers.yml"},
@@ -72,4 +80,24 @@ func TestUpdateRejectsAnInvalidAnswersFile(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestUpdateAcceptsAnAnswersFileWithoutALaterComponent(t *testing.T) {
+	s := newSandbox(t)
+	s.write(s.dir, "demo/.sow-answers.yml", "sow_version: 1.2.3\nproject_name: demo\n")
+
+	got := s.runIn("demo", "update")
+
+	if got.code != 0 {
+		t.Errorf("exit code = %d, want 0\n%s", got.code, got.stderr)
+	}
+	wantContains(t, got.stdout, "demo is already at sow 1.2.3")
+}
+
+func TestUpdateHelpDescribesTheCommand(t *testing.T) {
+	s := newSandbox(t)
+
+	got := s.mustRun("update", "--help")
+
+	wantContains(t, got.stdout, "Update the project in this directory to the template of this sow version.")
 }
