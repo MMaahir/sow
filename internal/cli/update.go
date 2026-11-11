@@ -25,6 +25,9 @@ func updateCommand(env Env) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if err := checkRenderable(recorded[answers.ProjectName], version, env.Version); err != nil {
+				return err
+			}
 			if version != env.Version {
 				return nil
 			}

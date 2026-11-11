@@ -1,6 +1,7 @@
 package cli_test
 
 import (
+	"path/filepath"
 	"testing"
 )
 
@@ -100,4 +101,63 @@ func TestUpdateHelpDescribesTheCommand(t *testing.T) {
 	got := s.mustRun("update", "--help")
 
 	wantContains(t, got.stdout, "Update the project in this directory to the template of this sow version.")
+}
+
+func TestUpdateRefusesAVersionItCantRender(t *testing.T) {
+	tests := map[string]struct {
+		recorded string
+		cli      string
+		want     []string
+	}{
+		"a development build": {
+			recorded: "0.0.0-dev",
+			cli:      "1.2.3",
+			want:     []string{"0.0.0-dev", "a development build"},
+		},
+		"a newer version": {
+			recorded: "2.0.0",
+			cli:      "1.2.3",
+			want:     []string{"2.0.0", "newer than this sow", "upgrade sow"},
+		},
+		"a newer version compared as numbers": {
+			recorded: "1.10.0",
+			cli:      "1.9.0",
+			want:     []string{"1.10.0", "newer than this sow", "upgrade sow"},
+		},
+		"a word": {
+			recorded: "latest",
+			cli:      "1.2.3",
+			want:     []string{"latest", "isn't a sow release"},
+		},
+		"two numbers": {
+			recorded: "0.1",
+			cli:      "1.2.3",
+			want:     []string{"0.1", "isn't a sow release"},
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			s := newSandbox(t)
+			s.projectAt(tt.recorded)
+			answersFile := s.read("demo/.sow-answers.yml")
+			s.version = tt.cli
+			// SOW_REPO points nowhere and git isn't on the PATH, so the
+			// message shows sow refused before it fetched anything.
+			s.extraEnv = append(s.extraEnv, "SOW_REPO="+filepath.Join(s.dir, "no-such-repo"))
+			s.isolatePath()
+
+			got := s.runIn("demo", "update")
+
+			if got.code != 1 {
+				t.Errorf("exit code = %d, want 1", got.code)
+			}
+			wantContains(t, got.stderr, tt.want...)
+			if got := s.read("demo/.sow-answers.yml"); got != answersFile {
+				t.Errorf(".sow-answers.yml = %q, want it untouched", got)
+			}
+			if got := s.git("status", "--porcelain"); got != "" {
+				t.Errorf("sow update changed the project:\n%s", got)
+			}
+		})
+	}
 }
