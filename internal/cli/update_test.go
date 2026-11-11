@@ -10,17 +10,29 @@ import (
 )
 
 func TestUpdateSaysAProjectAtTheCLIVersionIsAlreadyThere(t *testing.T) {
-	s := newSandbox(t)
-	s.mustRun("new", "demo", "--no-input")
-
-	got := s.runIn("demo", "update")
-
-	if got.code != 0 {
-		t.Errorf("exit code = %d, want 0\n%s", got.code, got.stderr)
+	tests := map[string]string{
+		"a full answers file": "sow_version: 1.2.3\nproject_name: demo\n" +
+			"user_name: Test User\nuser_email: test@example.com\ngithub_user: test-user\nbackend: none\n",
+		"an answers file without a later component": "sow_version: 1.2.3\nproject_name: demo\n" +
+			"user_name: Test User\nuser_email: test@example.com\ngithub_user: test-user\n",
 	}
-	wantContains(t, got.stdout, "demo is already at sow 1.2.3")
-	if got := s.git("status", "--porcelain"); got != "" {
-		t.Errorf("sow update changed the project:\n%s", got)
+	for name, file := range tests {
+		t.Run(name, func(t *testing.T) {
+			s := newSandbox(t)
+			s.write(s.dir, "demo/.sow-answers.yml", file)
+			s.write(s.dir, "demo/README.md", "# demo\n")
+			before := s.files("demo")
+
+			got := s.runIn("demo", "update")
+
+			if got.code != 0 {
+				t.Errorf("exit code = %d, want 0\n%s", got.code, got.stderr)
+			}
+			wantContains(t, got.stdout, "demo is already at sow 1.2.3")
+			if after := s.files("demo"); !maps.Equal(after, before) {
+				t.Errorf("project = %q\nwant it unchanged: %q", after, before)
+			}
+		})
 	}
 }
 
@@ -114,19 +126,6 @@ func TestUpdateRejectsAnInvalidAnswersFile(t *testing.T) {
 	}
 }
 
-func TestUpdateAcceptsAnAnswersFileWithoutALaterComponent(t *testing.T) {
-	s := newSandbox(t)
-	s.write(s.dir, "demo/.sow-answers.yml", "sow_version: 1.2.3\nproject_name: demo\n"+
-		"user_name: Test User\nuser_email: test@example.com\ngithub_user: test-user\n")
-
-	got := s.runIn("demo", "update")
-
-	if got.code != 0 {
-		t.Errorf("exit code = %d, want 0\n%s", got.code, got.stderr)
-	}
-	wantContains(t, got.stdout, "demo is already at sow 1.2.3")
-}
-
 func TestUpdateHelpDescribesTheCommand(t *testing.T) {
 	s := newSandbox(t)
 
@@ -179,12 +178,14 @@ func TestUpdateRefusesAVersionItCantRender(t *testing.T) {
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			s := newSandbox(t)
-			s.projectAt(tt.recorded)
-			answersFile := s.read("demo/.sow-answers.yml")
+			answersFile := "sow_version: " + tt.recorded + "\nproject_name: demo\n" +
+				"user_name: Test User\nuser_email: test@example.com\ngithub_user: test-user\n"
+			s.write(s.dir, "demo/.sow-answers.yml", answersFile)
+			s.write(s.dir, "demo/README.md", "# demo\n")
+			before := s.files("demo")
 			s.version = tt.cli
 			// SOW_REPO points nowhere and git isn't on the PATH, so the
 			// message shows sow refused before it fetched anything.
-			s.extraEnv = append(s.extraEnv, "SOW_REPO="+filepath.Join(s.dir, "no-such-repo"))
 			s.isolatePath()
 
 			got := s.runIn("demo", "update")
@@ -196,8 +197,8 @@ func TestUpdateRefusesAVersionItCantRender(t *testing.T) {
 			if got := s.read("demo/.sow-answers.yml"); got != answersFile {
 				t.Errorf(".sow-answers.yml = %q, want it untouched", got)
 			}
-			if got := s.git("status", "--porcelain"); got != "" {
-				t.Errorf("sow update changed the project:\n%s", got)
+			if after := s.files("demo"); !maps.Equal(after, before) {
+				t.Errorf("project = %q\nwant it unchanged: %q", after, before)
 			}
 		})
 	}
@@ -218,47 +219,50 @@ var templateAt123 = map[string]string{
 
 func TestUpdateBringsAnUneditedProjectToTheNewTemplate(t *testing.T) {
 	s := newSandbox(t)
-	s.releasedProject("1.0.0", templateAt100, templateAt123)
+	s.cachedProject("1.0.0", templateAt100, templateAt123)
 	if got := s.runIn("fresh", "new", "demo", "--no-input"); got.code != 0 {
 		t.Fatalf("sow new in fresh exited %d:\n%s", got.code, got.stderr)
 	}
+	head := s.git("rev-parse", "HEAD")
 
 	got := s.runIn("demo", "update")
 
 	if got.code != 0 {
 		t.Fatalf("exit code = %d, want 0\n%s", got.code, got.stderr)
 	}
-	wantContains(t, s.read("demo/README.md"), "line four, from sow 1.2.3\n")
-	if got, want := s.read("demo/CHANGELOG.md"), "# Changelog\n"; got != want {
-		t.Errorf("CHANGELOG.md = %q, want %q", got, want)
-	}
-	if got, want := s.files("demo"), s.files("fresh/demo"); !maps.Equal(got, want) {
-		t.Errorf("updated project = %q\nwant what sow new renders: %q", got, want)
-	}
-}
-
-func TestUpdateRecordsTheCLIVersionInTheAnswersFile(t *testing.T) {
-	s := newSandbox(t)
-	s.releasedProject("1.0.0", templateAt100, templateAt123)
-
-	s.runIn("demo", "update")
-
-	wantContains(t, s.read("demo/.sow-answers.yml"), "sow_version: 1.2.3\n")
-}
-
-func TestUpdateEndsByTellingTheAuthorToReviewTheDiff(t *testing.T) {
-	s := newSandbox(t)
-	s.releasedProject("1.0.0", templateAt100, templateAt123)
-
-	got := s.runIn("demo", "update")
-
-	lines := strings.Split(strings.TrimRight(got.stdout, "\n"), "\n")
-	wantContains(t, lines[len(lines)-1], "1.0.0", "1.2.3", "git diff")
+	t.Run("to what sow new renders", func(t *testing.T) {
+		s := s.in(t)
+		wantContains(t, s.read("demo/README.md"), "line four, from sow 1.2.3\n")
+		if got, want := s.read("demo/CHANGELOG.md"), "# Changelog\n"; got != want {
+			t.Errorf("CHANGELOG.md = %q, want %q", got, want)
+		}
+		if got, want := s.files("demo"), s.files("fresh/demo"); !maps.Equal(got, want) {
+			t.Errorf("updated project = %q\nwant what sow new renders: %q", got, want)
+		}
+	})
+	t.Run("records the CLI version in the answers file", func(t *testing.T) {
+		s := s.in(t)
+		wantContains(t, s.read("demo/.sow-answers.yml"), "sow_version: 1.2.3\n")
+	})
+	t.Run("ends by telling the author to review the diff", func(t *testing.T) {
+		lines := strings.Split(strings.TrimRight(got.stdout, "\n"), "\n")
+		wantContains(t, lines[len(lines)-1], "1.0.0", "1.2.3", "git diff")
+	})
+	t.Run("leaves the changes uncommitted", func(t *testing.T) {
+		s := s.in(t)
+		if got := s.git("rev-parse", "HEAD"); got != head {
+			t.Errorf("HEAD = %s, want %s", got, head)
+		}
+		want := "M .sow-answers.yml\n M README.md\n?? CHANGELOG.md"
+		if got := s.git("status", "--porcelain"); got != want {
+			t.Errorf("git status --porcelain = %q, want %q", got, want)
+		}
+	})
 }
 
 func TestUpdateKeepsAnEditAndAddsTheTemplateChangeToTheSameFile(t *testing.T) {
 	s := newSandbox(t)
-	s.releasedProject("1.0.0", templateAt100, templateAt123)
+	s.cachedProject("1.0.0", templateAt100, templateAt123)
 	s.edit("demo/README.md", func(readme string) string {
 		return strings.Replace(readme, "line one\n", "line one, mine\n", 1)
 	})
@@ -277,7 +281,7 @@ func TestUpdateKeepsAnEditAndAddsTheTemplateChangeToTheSameFile(t *testing.T) {
 
 func TestUpdateLeavesAFileTheProjectAddedUnchanged(t *testing.T) {
 	s := newSandbox(t)
-	s.releasedProject("1.0.0", templateAt100, templateAt123)
+	s.cachedProject("1.0.0", templateAt100, templateAt123)
 	s.write(s.dir, "demo/notes.txt", "my notes\nno trailing newline")
 	s.commit()
 
@@ -293,7 +297,7 @@ func TestUpdateDeletesAnUneditedFileTheNewTemplateDroppedAndKeepsAnEditedOne(t *
 	withOldFiles := maps.Clone(templateAt100)
 	withOldFiles["base/docs/unedited.md"] = "from the template\n"
 	withOldFiles["base/edited.md"] = "from the template\n"
-	s.releasedProject("1.0.0", withOldFiles, templateAt123)
+	s.cachedProject("1.0.0", withOldFiles, templateAt123)
 	s.write(s.dir, "demo/edited.md", "from the template\nand from me\n")
 	s.commit()
 
@@ -315,41 +319,50 @@ func TestUpdateDeletesAnUneditedFileTheNewTemplateDroppedAndKeepsAnEditedOne(t *
 
 func TestUpdateMarksAClashBetweenAnEditAndATemplateChange(t *testing.T) {
 	s := newSandbox(t)
-	s.releasedProject("1.0.0", templateAt100, templateAt123)
-	s.edit("demo/README.md", func(readme string) string {
-		return strings.Replace(readme, "line four\n", "line four, mine\n", 1)
-	})
-	s.commit()
-
-	got := s.runIn("demo", "update")
-
-	if got.code != 1 {
-		t.Errorf("exit code = %d, want 1", got.code)
-	}
-	wantContains(t, got.stderr, "README.md", "conflict", "git reset --hard && git clean -fd")
-	wantContains(t, s.read("demo/README.md"), "<<<<<<<", "line four, mine", "line four, from sow 1.2.3")
-	wantContains(t, s.read("demo/.sow-answers.yml"), "sow_version: 1.2.3\n")
-}
-
-func TestUpdateWithAConflictStillUpdatesTheOtherFiles(t *testing.T) {
-	s := newSandbox(t)
-	newTemplate := maps.Clone(templateAt123)
+	newTemplate := withWorkspace(templateAt123)
 	newTemplate["base/LICENSE"] = "MIT, from sow 1.2.3\n"
-	s.releasedProject("1.0.0", templateAt100, newTemplate)
+	s.cachedProject("1.0.0", templateAt100, newTemplate)
 	s.edit("demo/README.md", func(readme string) string {
 		return strings.Replace(readme, "line four\n", "line four, mine\n", 1)
 	})
 	s.commit()
+	s.fakeTool("vp", `echo "$*" >> vp-calls`)
+	before := s.files("demo")
 
 	got := s.runIn("demo", "update")
 
 	if got.code != 1 {
 		t.Errorf("exit code = %d, want 1", got.code)
 	}
-	if got, want := s.read("demo/LICENSE"), "MIT, from sow 1.2.3\n"; got != want {
-		t.Errorf("LICENSE = %q, want %q", got, want)
-	}
-	wantContains(t, s.read("demo/.sow-answers.yml"), "sow_version: 1.2.3\n")
+	t.Run("in the file", func(t *testing.T) {
+		s := s.in(t)
+		wantContains(t, got.stderr, "README.md", "conflict", "git reset --hard && git clean -fd")
+		wantContains(t, s.read("demo/README.md"), "<<<<<<<", "line four, mine", "line four, from sow 1.2.3")
+		wantContains(t, s.read("demo/.sow-answers.yml"), "sow_version: 1.2.3\n")
+	})
+	t.Run("and still updates the other files", func(t *testing.T) {
+		s := s.in(t)
+		if got, want := s.read("demo/LICENSE"), "MIT, from sow 1.2.3\n"; got != want {
+			t.Errorf("LICENSE = %q, want %q", got, want)
+		}
+	})
+	t.Run("and skips the follow-up steps", func(t *testing.T) {
+		s := s.in(t)
+		wantContains(t, got.stderr, "follow-up steps", "vp install")
+		if s.exists("demo/vp-calls") {
+			t.Errorf("vp ran despite the conflict: %q", s.read("demo/vp-calls"))
+		}
+	})
+	// This subtest resets the project, so it runs last.
+	t.Run("that git can undo", func(t *testing.T) {
+		s := s.in(t)
+		s.git("reset", "--quiet", "--hard")
+		s.git("clean", "-fd")
+
+		if after := s.files("demo"); !maps.Equal(after, before) {
+			t.Errorf("project = %q\nwant the previous commit: %q", after, before)
+		}
+	})
 }
 
 func TestUpdateRefusesAProjectWithLocalChanges(t *testing.T) {
@@ -368,7 +381,7 @@ func TestUpdateRefusesAProjectWithLocalChanges(t *testing.T) {
 	for name, change := range tests {
 		t.Run(name, func(t *testing.T) {
 			s := newSandbox(t)
-			s.releasedProject("1.0.0", templateAt100, templateAt123)
+			s.cachedProject("1.0.0", templateAt100, templateAt123)
 			change(s)
 			before := s.files("demo")
 
@@ -387,7 +400,7 @@ func TestUpdateRefusesAProjectWithLocalChanges(t *testing.T) {
 
 func TestUpdateRefusesAProjectThatIsNotAGitRepo(t *testing.T) {
 	s := newSandbox(t)
-	s.releasedProject("1.0.0", templateAt100, templateAt123)
+	s.cachedProject("1.0.0", templateAt100, templateAt123)
 	if err := os.RemoveAll(filepath.Join(s.dir, "demo", ".git")); err != nil {
 		t.Fatal(err)
 	}
@@ -406,7 +419,7 @@ func TestUpdateRefusesAProjectThatIsNotAGitRepo(t *testing.T) {
 
 func TestUpdateOfATypeScriptProjectWithoutVPChangesNothing(t *testing.T) {
 	s := newSandbox(t)
-	s.releasedProject("1.0.0", withBackendTS(templateAt100), withBackendTS(withWorkspace(templateAt123)))
+	s.cachedProject("1.0.0", withBackendTS(templateAt100), withBackendTS(withWorkspace(templateAt123)))
 	s.edit("demo/.sow-answers.yml", func(file string) string {
 		return strings.Replace(file, "backend: none\n", "backend: ts\n", 1)
 	})
@@ -427,7 +440,7 @@ func TestUpdateOfATypeScriptProjectWithoutVPChangesNothing(t *testing.T) {
 
 func TestUpdateKeepsAFileTheProjectDeletedDeleted(t *testing.T) {
 	s := newSandbox(t)
-	s.releasedProject("1.0.0", templateAt100, templateAt123)
+	s.cachedProject("1.0.0", templateAt100, templateAt123)
 	s.git("rm", "--quiet", "README.md")
 	s.commit()
 
@@ -452,7 +465,7 @@ func TestUpdateLeavesDotEnvUnchanged(t *testing.T) {
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			s := newSandbox(t)
-			s.releasedProject("1.0.0", withEnvExample(templateAt100), withEnvExample(templateAt123))
+			s.cachedProject("1.0.0", withEnvExample(templateAt100), withEnvExample(templateAt123))
 			s.edit("demo/README.md", func(readme string) string {
 				return strings.Replace(readme, tt.editedLine+"\n", tt.editedLine+", mine\n", 1)
 			})
@@ -473,7 +486,7 @@ func TestUpdateLeavesDotEnvUnchanged(t *testing.T) {
 
 func TestUpdateDoesNotCreateDotEnv(t *testing.T) {
 	s := newSandbox(t)
-	s.releasedProject("1.0.0", withEnvExample(templateAt100), withEnvExample(templateAt123))
+	s.cachedProject("1.0.0", withEnvExample(templateAt100), withEnvExample(templateAt123))
 	if err := os.Remove(filepath.Join(s.dir, "demo", ".env")); err != nil {
 		t.Fatal(err)
 	}
@@ -490,7 +503,7 @@ func TestUpdateDoesNotCreateDotEnv(t *testing.T) {
 
 func TestUpdateRunsVPInstallWhenTheNewTemplateHasAWorkspace(t *testing.T) {
 	s := newSandbox(t)
-	s.releasedProject("1.0.0", templateAt100, withWorkspace(templateAt123))
+	s.cachedProject("1.0.0", templateAt100, withWorkspace(templateAt123))
 	s.fakeTool("vp", `echo "$*" >> vp-calls`)
 
 	got := s.runIn("demo", "update")
@@ -503,29 +516,9 @@ func TestUpdateRunsVPInstallWhenTheNewTemplateHasAWorkspace(t *testing.T) {
 	}
 }
 
-func TestUpdateWithAConflictSkipsTheFollowUpSteps(t *testing.T) {
-	s := newSandbox(t)
-	s.releasedProject("1.0.0", templateAt100, withWorkspace(templateAt123))
-	s.edit("demo/README.md", func(readme string) string {
-		return strings.Replace(readme, "line four\n", "line four, mine\n", 1)
-	})
-	s.commit()
-	s.fakeTool("vp", `echo "$*" >> vp-calls`)
-
-	got := s.runIn("demo", "update")
-
-	if got.code != 1 {
-		t.Errorf("exit code = %d, want 1", got.code)
-	}
-	wantContains(t, got.stderr, "follow-up steps", "vp install")
-	if s.exists("demo/vp-calls") {
-		t.Errorf("vp ran despite the conflict: %q", s.read("demo/vp-calls"))
-	}
-}
-
 func TestUpdateReportsAFailedFollowUpStepAndKeepsTheMergedFiles(t *testing.T) {
 	s := newSandbox(t)
-	s.releasedProject("1.0.0", templateAt100, withWorkspace(templateAt123))
+	s.cachedProject("1.0.0", templateAt100, withWorkspace(templateAt123))
 	s.fakeTool("vp", "echo registry unreachable >&2; exit 1")
 
 	got := s.runIn("demo", "update")
@@ -540,52 +533,13 @@ func TestUpdateReportsAFailedFollowUpStepAndKeepsTheMergedFiles(t *testing.T) {
 	}
 }
 
-func TestUpdateLeavesTheChangesUncommitted(t *testing.T) {
-	s := newSandbox(t)
-	s.releasedProject("1.0.0", templateAt100, templateAt123)
-	head := s.git("rev-parse", "HEAD")
-
-	got := s.runIn("demo", "update")
-
-	if got.code != 0 {
-		t.Errorf("exit code = %d, want 0\n%s", got.code, got.stderr)
-	}
-	if got := s.git("rev-parse", "HEAD"); got != head {
-		t.Errorf("HEAD = %s, want %s", got, head)
-	}
-	want := "M .sow-answers.yml\n M README.md\n?? CHANGELOG.md"
-	if got := s.git("status", "--porcelain"); got != want {
-		t.Errorf("git status --porcelain = %q, want %q", got, want)
-	}
-}
-
-func TestUpdateWithAConflictCanBeUndoneWithGit(t *testing.T) {
-	s := newSandbox(t)
-	s.releasedProject("1.0.0", templateAt100, templateAt123)
-	s.edit("demo/README.md", func(readme string) string {
-		return strings.Replace(readme, "line four\n", "line four, mine\n", 1)
-	})
-	s.commit()
-	before := s.files("demo")
-	if got := s.runIn("demo", "update"); got.code != 1 {
-		t.Fatalf("sow update exited %d, want a conflict:\n%s", got.code, got.stderr)
-	}
-
-	s.git("reset", "--quiet", "--hard")
-	s.git("clean", "-fd")
-
-	if after := s.files("demo"); !maps.Equal(after, before) {
-		t.Errorf("project = %q\nwant the previous commit: %q", after, before)
-	}
-}
-
 func TestUpdateRendersATemplateThatReadsAComponentTheAnswersFileLacks(t *testing.T) {
 	s := newSandbox(t)
 	readsBackend := maps.Clone(templateAt100)
 	readsBackend["base/backend.md.tmpl"] = "backend: [[ .backend ]]\n"
 	newReadsBackend := maps.Clone(templateAt123)
 	newReadsBackend["base/backend.md.tmpl"] = "backend: [[ .backend ]]\n"
-	s.releasedProject("1.0.0", readsBackend, newReadsBackend)
+	s.cachedProject("1.0.0", readsBackend, newReadsBackend)
 	s.edit("demo/.sow-answers.yml", func(file string) string {
 		return strings.Replace(file, "backend: none\n", "", 1)
 	})
@@ -654,26 +608,40 @@ func TestUpdateCachesTheOldTemplate(t *testing.T) {
 }
 
 func TestUpdateRefusesARepoWithoutTheRecordedTag(t *testing.T) {
-	s := newSandbox(t)
-	s.release("0.9.0", templateAt100)
-	s.install("1.0.0", templateAt100)
-	s.mustRun("new", "demo", "--no-input")
-	s.install(testVersion, templateAt123)
-
-	got := s.runIn("demo", "update")
-
-	if got.code != 1 {
-		t.Errorf("exit code = %d, want 1", got.code)
+	tests := map[string]func(s *sandbox){
+		"a repo with another tag": func(s *sandbox) {
+			s.release("0.9.0", templateAt100)
+			s.install("1.0.0", templateAt100)
+			s.mustRun("new", "demo", "--no-input")
+			s.install(testVersion, templateAt123)
+		},
+		"a branch named like the tag": func(s *sandbox) {
+			s.releasedProject("1.0.0", templateAt100, templateAt123)
+			s.gitIn(s.repo, "tag", "--delete", "v1.0.0")
+			s.gitIn(s.repo, "branch", "v1.0.0")
+		},
 	}
-	wantContains(t, got.stderr, "v1.0.0", "SOW_REPO")
-	if got := s.git("status", "--porcelain"); got != "" {
-		t.Errorf("sow update changed the project:\n%s", got)
+	for name, setUp := range tests {
+		t.Run(name, func(t *testing.T) {
+			s := newSandbox(t)
+			setUp(s)
+
+			got := s.runIn("demo", "update")
+
+			if got.code != 1 {
+				t.Errorf("exit code = %d, want 1", got.code)
+			}
+			wantContains(t, got.stderr, "v1.0.0", "SOW_REPO")
+			if got := s.git("status", "--porcelain"); got != "" {
+				t.Errorf("sow update changed the project:\n%s", got)
+			}
+		})
 	}
 }
 
 func TestUpdateKeepsAnAnswersFileWithoutALaterComponentReadable(t *testing.T) {
 	s := newSandbox(t)
-	s.releasedProject("1.0.0", templateAt100, templateAt123)
+	s.cachedProject("1.0.0", templateAt100, templateAt123)
 	s.edit("demo/.sow-answers.yml", func(file string) string {
 		return strings.Replace(file, "backend: none\n", "", 1)
 	})
@@ -710,7 +678,7 @@ func TestUpdateReadsARelativeSOWRepoFromTheProjectDirectory(t *testing.T) {
 
 func TestUpdateIgnoresAGitWarningWhenItChecksForLocalChanges(t *testing.T) {
 	s := newSandbox(t)
-	s.releasedProject("1.0.0", templateAt100, templateAt123)
+	s.cachedProject("1.0.0", templateAt100, templateAt123)
 	s.isolatePath()
 	realGit, err := exec.LookPath("git")
 	if err != nil {
@@ -751,23 +719,6 @@ func TestUpdateReadsTheOldTemplateWithoutTheAuthorsCheckoutFilters(t *testing.T)
 	}
 }
 
-func TestUpdateRefusesABranchNamedLikeTheRecordedTag(t *testing.T) {
-	s := newSandbox(t)
-	s.releasedProject("1.0.0", templateAt100, templateAt123)
-	s.gitIn(s.repo, "tag", "--delete", "v1.0.0")
-	s.gitIn(s.repo, "branch", "v1.0.0")
-
-	got := s.runIn("demo", "update")
-
-	if got.code != 1 {
-		t.Errorf("exit code = %d, want 1", got.code)
-	}
-	wantContains(t, got.stderr, "v1.0.0", "SOW_REPO")
-	if got := s.git("status", "--porcelain"); got != "" {
-		t.Errorf("sow update changed the project:\n%s", got)
-	}
-}
-
 func TestUpdateRefusesToWriteThroughASymlink(t *testing.T) {
 	tests := map[string]struct {
 		link   string
@@ -784,7 +735,7 @@ func TestUpdateRefusesToWriteThroughASymlink(t *testing.T) {
 			withDocs["base/docs/guide.md"] = "guide\n"
 			newWithDocs := maps.Clone(templateAt123)
 			newWithDocs["base/docs/guide.md"] = "guide, from sow 1.2.3\n"
-			s.releasedProject("1.0.0", withDocs, newWithDocs)
+			s.cachedProject("1.0.0", withDocs, newWithDocs)
 			outside := map[string]string{"README.md": s.read("demo/README.md"), "guide.md": "guide\n"}
 			for name, content := range outside {
 				s.write(s.home, "outside/"+name, content)
@@ -821,4 +772,64 @@ func TestUpdateRefusesToWriteThroughASymlink(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestUpdateMergesAFileTheProjectAlreadyHasAtAPathOnlyTheNewTemplateHas(t *testing.T) {
+	s := newSandbox(t)
+	s.cachedProject("1.0.0", templateAt100, templateAt123)
+	s.write(s.dir, "demo/CHANGELOG.md", "# My changes\n")
+	s.commit()
+
+	got := s.runIn("demo", "update")
+
+	if got.code != 1 {
+		t.Errorf("exit code = %d, want 1", got.code)
+	}
+	wantContains(t, got.stderr, "CHANGELOG.md", "conflict", "git reset --hard && git clean -fd")
+	wantContains(t, s.read("demo/CHANGELOG.md"), "<<<<<<<", "# My changes\n", "# Changelog\n")
+}
+
+func TestUpdateKeepsAnEditToAFileTheTemplateDidNotChange(t *testing.T) {
+	s := newSandbox(t)
+	// git merge-file refuses a binary file, so only a file sow leaves alone
+	// keeps the edit.
+	withLogo := maps.Clone(templateAt100)
+	withLogo["base/logo.bin"] = "logo\x00\n"
+	newWithLogo := maps.Clone(templateAt123)
+	newWithLogo["base/logo.bin"] = "logo\x00\n"
+	s.cachedProject("1.0.0", withLogo, newWithLogo)
+	s.write(s.dir, "demo/logo.bin", "logo\x00mine\n")
+	s.commit()
+
+	got := s.runIn("demo", "update")
+
+	if got.code != 0 {
+		t.Errorf("exit code = %d, want 0\n%s", got.code, got.stderr)
+	}
+	if got, want := s.read("demo/logo.bin"), "logo\x00mine\n"; got != want {
+		t.Errorf("logo.bin = %q, want %q", got, want)
+	}
+}
+
+func TestUpdateReportsAFailedMergeAndLeavesTheFileUnchanged(t *testing.T) {
+	s := newSandbox(t)
+	// git merge-file refuses a binary file with exit code 255.
+	withLogo := maps.Clone(templateAt100)
+	withLogo["base/logo.bin"] = "logo\x00\n"
+	newWithLogo := maps.Clone(templateAt123)
+	newWithLogo["base/logo.bin"] = "logo\x00from sow 1.2.3\n"
+	s.cachedProject("1.0.0", withLogo, newWithLogo)
+	s.write(s.dir, "demo/logo.bin", "logo\x00mine\n")
+	s.commit()
+
+	got := s.runIn("demo", "update")
+
+	if got.code != 1 {
+		t.Errorf("exit code = %d, want 1", got.code)
+	}
+	wantContains(t, got.stderr, "merge logo.bin", "Cannot merge binary files", "git reset --hard && git clean -fd")
+	if got, want := s.read("demo/logo.bin"), "logo\x00mine\n"; got != want {
+		t.Errorf("logo.bin = %q, want it unchanged: %q", got, want)
+	}
+	wantContains(t, s.read("demo/.sow-answers.yml"), "sow_version: 1.0.0\n")
 }
