@@ -95,6 +95,11 @@ func TestNewBackendTSProjectHealth(t *testing.T) {
 		s.mustTool(".", "mise", "run", "check")
 	})
 
+	t.Run("vp check passes at the root", func(t *testing.T) {
+		s := s.in(t)
+		s.mustTool(".", "vp", "check")
+	})
+
 	t.Run("lint, test and build pass in the backend", func(t *testing.T) {
 		s := s.in(t)
 		for _, task := range []string{"lint", "test", "build"} {

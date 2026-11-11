@@ -56,6 +56,8 @@ func TestNewBackendTSSharedFilesCoverTheBackend(t *testing.T) {
 
 	wantContains(t, s.read("demo/mise.toml"),
 		"  \"pre-commit run --all-files\",\n  \"mise --cd backend run lint\",\n  \"mise --cd backend run test\",\n]")
+	// Oxfmt lays out mise.toml differently from the template, so the root config leaves it out.
+	wantContains(t, s.read("demo/vite.config.ts"), `"mise.toml"`)
 	wantContains(t, s.read("demo/.pre-commit-config.yaml"), "entry: vp check --fix")
 	wantContains(t, s.read("demo/AGENTS.md"), "## TypeScript", "Never call `vite`, `vitest`, `oxlint` or `oxfmt` directly.")
 	wantContains(t, s.read("demo/.gitignore"), "node_modules/\n", "dist/\n")
