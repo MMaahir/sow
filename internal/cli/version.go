@@ -11,8 +11,8 @@ import (
 // checkRenderable returns an error when sow update can't render the template
 // at recorded, the project's sow_version, with a sow at version current. It
 // can render only a release that isn't newer than current, because the old
-// render comes from the release's tag, and only when current is a release. The error names the project by its
-// project_name, project.
+// render comes from the release's tag, and only when current is a release.
+// The error names the project by its project_name, project.
 func checkRenderable(project, recorded, current string) error {
 	if recorded == DevVersion {
 		return fmt.Errorf("%s was created by sow %s, a development build, so no release exists to update from: "+

@@ -43,11 +43,10 @@ type UpdateOptions struct {
 // refuses a project that isn't a git repo or has uncommitted or untracked
 // files, so git reset --hard && git clean -fd can always undo the update. For
 // the same reason it refuses a project where a file it would read or write,
-// or a directory above one, is a symlink. It
-// fetches the old template from opts.Repo unless opts.CacheDir already has it,
-// renders the old and the new template with the project's answers, merges
-// each file with git merge-file, and runs the follow-up steps. It never
-// commits.
+// or a directory above one, is a symlink. It fetches the old template from
+// opts.Repo unless opts.CacheDir already has it, renders the old and the new
+// template with the project's answers, merges each file with git merge-file,
+// and runs the follow-up steps. It never commits.
 //
 // Update returns the paths that git merge-file left conflict markers in,
 // sorted. When there are any, it skips the follow-up steps, because a
