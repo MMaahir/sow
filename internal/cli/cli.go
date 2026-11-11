@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/fs"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -28,6 +29,9 @@ type Env struct {
 	Environ []string
 	// Version is the sow release, without a leading "v".
 	Version string
+	// Template holds the template directories of Version. sow new renders
+	// it, and sow update renders it as the new render.
+	Template fs.FS
 	// Prompter asks the author for answers. It's nil when stdin isn't a
 	// terminal, and then sow new refuses to ask.
 	Prompter Prompter

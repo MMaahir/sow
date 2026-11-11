@@ -20,7 +20,9 @@ const FileName = ".sow-answers.yml"
 const versionKey = "sow_version"
 
 // Marshal returns the contents of the answers file for a project rendered
-// from the given sow version. Entries follow the order of Questions.
+// from the given sow version. Entries follow the order of Questions. A
+// question a doesn't answer has no entry, so an answers file that an older
+// release wrote keeps its meaning when sow update rewrites it.
 func Marshal(version string, a Answers) ([]byte, error) {
 	entries := &yaml.Node{Kind: yaml.MappingNode}
 	add := func(key, value string) {
@@ -30,7 +32,9 @@ func Marshal(version string, a Answers) ([]byte, error) {
 	}
 	add(versionKey, version)
 	for _, q := range Questions() {
-		add(q.Key, a[q.Key])
+		if value, ok := a[q.Key]; ok {
+			add(q.Key, value)
+		}
 	}
 
 	var out bytes.Buffer

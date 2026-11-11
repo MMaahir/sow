@@ -4,12 +4,15 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/fstest"
 
+	"github.com/MMaahir/sow"
 	"github.com/MMaahir/sow/internal/answers"
 	"github.com/MMaahir/sow/internal/cli"
 )
@@ -35,6 +38,11 @@ type sandbox struct {
 	// version is the sow version the sandbox runs as. It's testVersion when
 	// empty.
 	version string
+	// template is the template sow renders. It's the real one unless a test
+	// calls install.
+	template fs.FS
+	// repo is the fixture git repo of sow that release creates, or "".
+	repo string
 }
 
 // result is what one sow run produced.
@@ -48,7 +56,7 @@ type result struct {
 // personal question.
 func newSandbox(t *testing.T) *sandbox {
 	t.Helper()
-	s := &sandbox{t: t, dir: t.TempDir(), home: t.TempDir()}
+	s := &sandbox{t: t, dir: t.TempDir(), home: t.TempDir(), template: sow.Template()}
 	s.writePersonalDefaults("user_name: Test User\nuser_email: test@example.com\ngithub_user: test-user\n")
 	return s
 }
@@ -65,12 +73,13 @@ func (s *sandbox) runIn(dir string, args ...string) result {
 	s.t.Helper()
 	var stdout, stderr bytes.Buffer
 	env := cli.Env{
-		Stdin:   strings.NewReader(""),
-		Stdout:  &stdout,
-		Stderr:  &stderr,
-		Dir:     filepath.Join(s.dir, filepath.FromSlash(dir)),
-		Environ: s.environ(),
-		Version: testVersion,
+		Stdin:    strings.NewReader(""),
+		Stdout:   &stdout,
+		Stderr:   &stderr,
+		Dir:      filepath.Join(s.dir, filepath.FromSlash(dir)),
+		Environ:  s.environ(),
+		Version:  testVersion,
+		Template: s.template,
 	}
 	if s.version != "" {
 		env.Version = s.version
@@ -96,6 +105,9 @@ func (s *sandbox) environ() []string {
 	base := []string{
 		"PATH=" + filepath.Join(s.home, "bin") + string(os.PathListSeparator) + os.Getenv("PATH"),
 		"HOME=" + s.home,
+		// A repo that doesn't exist, so sow update never reaches the network.
+		// release points SOW_REPO at a fixture repo.
+		"SOW_REPO=" + filepath.Join(s.home, "no-sow-repo"),
 	}
 	if s.realMachine {
 		// mise refuses to read a mise.toml it wasn't told to trust.
@@ -242,11 +254,103 @@ func (s *sandbox) projectAt(version string) {
 	s.git("commit", "--all", "--message", "record sow "+version)
 }
 
+// install makes the sandbox run as sow version with files as its template.
+// Each key of files is a path inside the template, such as
+// "base/README.md.tmpl".
+func (s *sandbox) install(version string, files map[string]string) {
+	s.t.Helper()
+	template := fstest.MapFS{}
+	for name, content := range files {
+		template[name] = &fstest.MapFile{Data: []byte(content)}
+	}
+	s.version = version
+	s.template = template
+}
+
+// release commits files under template/ in a fixture git repo of sow, tags
+// the commit v<version>, and points SOW_REPO at the repo. Each release
+// replaces the whole template/ directory. The repo is local, so sow update
+// fetches it without the network.
+func (s *sandbox) release(version string, files map[string]string) {
+	s.t.Helper()
+	if s.repo == "" {
+		s.repo = s.t.TempDir()
+		s.gitIn(s.repo, "init", "--initial-branch", "main")
+		s.extraEnv = append(s.extraEnv, "SOW_REPO="+s.repo)
+	}
+	if err := os.RemoveAll(filepath.Join(s.repo, "template")); err != nil {
+		s.t.Fatal(err)
+	}
+	for name, content := range files {
+		s.write(s.repo, "template/"+name, content)
+	}
+	s.gitIn(s.repo, "add", "--all")
+	s.gitIn(s.repo, "commit", "--message", "release "+version)
+	s.gitIn(s.repo, "tag", "v"+version)
+}
+
+// releasedProject creates the project demo with sow version and files as its
+// template, and releases that template in the fixture repo. Afterwards the
+// sandbox runs as sow testVersion with newFiles as its template.
+func (s *sandbox) releasedProject(version string, files, newFiles map[string]string) {
+	s.t.Helper()
+	s.release(version, files)
+	s.install(version, files)
+	s.mustRun("new", "demo", "--no-input")
+	s.install(testVersion, newFiles)
+}
+
+// commit commits every change in the project directory.
+func (s *sandbox) commit() {
+	s.t.Helper()
+	s.git("add", "--all")
+	s.git("commit", "--message", "change the project")
+}
+
+// files returns every file under dir in the working directory, except those
+// in .git, by path relative to dir.
+func (s *sandbox) files(dir string) map[string]string {
+	s.t.Helper()
+	root := filepath.Join(s.dir, filepath.FromSlash(dir))
+	files := map[string]string{}
+	err := filepath.WalkDir(root, func(name string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			if entry.Name() == ".git" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		content, err := os.ReadFile(name)
+		if err != nil {
+			return err
+		}
+		relative, err := filepath.Rel(root, name)
+		if err != nil {
+			return err
+		}
+		files[filepath.ToSlash(relative)] = string(content)
+		return nil
+	})
+	if err != nil {
+		s.t.Fatal(err)
+	}
+	return files
+}
+
 // git runs git in the project directory and returns its trimmed output.
 func (s *sandbox) git(args ...string) string {
 	s.t.Helper()
+	return s.gitIn(filepath.Join(s.dir, "demo"), args...)
+}
+
+// gitIn runs git in dir, an absolute path, and returns its trimmed output.
+func (s *sandbox) gitIn(dir string, args ...string) string {
+	s.t.Helper()
 	cmd := exec.CommandContext(s.t.Context(), "git", args...)
-	cmd.Dir = filepath.Join(s.dir, "demo")
+	cmd.Dir = dir
 	cmd.Env = s.environ()
 	output, err := cmd.CombinedOutput()
 	if err != nil {
