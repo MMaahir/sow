@@ -68,7 +68,7 @@ func New(ctx context.Context, opts Options) error {
 		return fmt.Errorf("write the project: %w", err)
 	}
 
-	if err := runFollowUpSteps(ctx, opts.Environ, opts.Dir); err != nil {
+	if err := runFollowUpSteps(ctx, opts.Environ, opts.Dir, false); err != nil {
 		return err
 	}
 
@@ -91,19 +91,26 @@ func New(ctx context.Context, opts Options) error {
 // the command and its directory and carries the command's output, so the
 // author can run it again by hand.
 func run(ctx context.Context, environ []string, dir, name string, args ...string) error {
+	_, err := output(ctx, environ, dir, name, args...)
+	return err
+}
+
+// output starts a command in dir like run does, and returns what the command
+// printed to stdout and stderr.
+func output(ctx context.Context, environ []string, dir, name string, args ...string) (string, error) {
 	executable, err := lookPath(environ, name)
 	if err != nil {
-		return fmt.Errorf("%s %s failed in %s: %w", name, strings.Join(args, " "), dir, err)
+		return "", fmt.Errorf("%s %s failed in %s: %w", name, strings.Join(args, " "), dir, err)
 	}
 	cmd := exec.CommandContext(ctx, executable, args...)
 	cmd.Dir = dir
 	cmd.Env = environ
-	output, err := cmd.CombinedOutput()
+	printed, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("%s %s failed in %s: %w\n%s",
-			name, strings.Join(args, " "), dir, err, strings.TrimSpace(string(output)))
+		return "", fmt.Errorf("%s %s failed in %s: %w\n%s",
+			name, strings.Join(args, " "), dir, err, strings.TrimSpace(string(printed)))
 	}
-	return nil
+	return string(printed), nil
 }
 
 // lookPath returns the absolute path of the executable called name, found in

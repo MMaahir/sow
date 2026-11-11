@@ -288,9 +288,272 @@ func TestUpdateMarksAClashBetweenAnEditAndATemplateChange(t *testing.T) {
 	if got.code != 1 {
 		t.Errorf("exit code = %d, want 1", got.code)
 	}
-	wantContains(t, got.stderr, "README.md", "conflict")
+	wantContains(t, got.stderr, "README.md", "conflict", "git reset --hard && git clean -fd")
 	wantContains(t, s.read("demo/README.md"), "<<<<<<<", "line four, mine", "line four, from sow 1.2.3")
 	wantContains(t, s.read("demo/.sow-answers.yml"), "sow_version: 1.2.3\n")
+}
+
+func TestUpdateWithAConflictStillUpdatesTheOtherFiles(t *testing.T) {
+	s := newSandbox(t)
+	newTemplate := maps.Clone(templateAt123)
+	newTemplate["base/LICENSE"] = "MIT, from sow 1.2.3\n"
+	s.releasedProject("1.0.0", templateAt100, newTemplate)
+	s.edit("demo/README.md", func(readme string) string {
+		return strings.Replace(readme, "line four\n", "line four, mine\n", 1)
+	})
+	s.commit()
+
+	got := s.runIn("demo", "update")
+
+	if got.code != 1 {
+		t.Errorf("exit code = %d, want 1", got.code)
+	}
+	if got, want := s.read("demo/LICENSE"), "MIT, from sow 1.2.3\n"; got != want {
+		t.Errorf("LICENSE = %q, want %q", got, want)
+	}
+	wantContains(t, s.read("demo/.sow-answers.yml"), "sow_version: 1.2.3\n")
+}
+
+func TestUpdateRefusesAProjectWithLocalChanges(t *testing.T) {
+	tests := map[string]func(s *sandbox){
+		"an uncommitted change": func(s *sandbox) {
+			s.edit("demo/README.md", func(readme string) string { return readme + "mine\n" })
+		},
+		"an untracked file": func(s *sandbox) {
+			s.write(s.dir, "demo/notes.txt", "mine\n")
+		},
+	}
+	for name, change := range tests {
+		t.Run(name, func(t *testing.T) {
+			s := newSandbox(t)
+			s.releasedProject("1.0.0", templateAt100, templateAt123)
+			change(s)
+			before := s.files("demo")
+
+			got := s.runIn("demo", "update")
+
+			if got.code != 1 {
+				t.Errorf("exit code = %d, want 1", got.code)
+			}
+			wantContains(t, got.stderr, "uncommitted", "commit")
+			if after := s.files("demo"); !maps.Equal(after, before) {
+				t.Errorf("project = %q\nwant it unchanged: %q", after, before)
+			}
+		})
+	}
+}
+
+func TestUpdateRefusesAProjectThatIsNotAGitRepo(t *testing.T) {
+	s := newSandbox(t)
+	s.releasedProject("1.0.0", templateAt100, templateAt123)
+	if err := os.RemoveAll(filepath.Join(s.dir, "demo", ".git")); err != nil {
+		t.Fatal(err)
+	}
+	before := s.files("demo")
+
+	got := s.runIn("demo", "update")
+
+	if got.code != 1 {
+		t.Errorf("exit code = %d, want 1", got.code)
+	}
+	wantContains(t, got.stderr, "git repo", "git init")
+	if after := s.files("demo"); !maps.Equal(after, before) {
+		t.Errorf("project = %q\nwant it unchanged: %q", after, before)
+	}
+}
+
+func TestUpdateKeepsAFileTheProjectDeletedDeleted(t *testing.T) {
+	s := newSandbox(t)
+	s.releasedProject("1.0.0", templateAt100, templateAt123)
+	s.git("rm", "--quiet", "README.md")
+	s.commit()
+
+	got := s.runIn("demo", "update")
+
+	if got.code != 0 {
+		t.Errorf("exit code = %d, want 0\n%s", got.code, got.stderr)
+	}
+	if s.exists("demo/README.md") {
+		t.Errorf("README.md exists, want it to stay deleted")
+	}
+}
+
+// withEnvExample returns files with a .env.example and a .gitignore that
+// ignores .env, as the real template has.
+func withEnvExample(files map[string]string) map[string]string {
+	files = maps.Clone(files)
+	files["base/.env.example"] = "PORT=3000\n"
+	files["base/.gitignore"] = ".env\n"
+	return files
+}
+
+func TestUpdateLeavesDotEnvUnchanged(t *testing.T) {
+	tests := map[string]struct {
+		editedLine string
+		wantCode   int
+	}{
+		"after a successful update": {editedLine: "line one", wantCode: 0},
+		"after a conflicted update": {editedLine: "line four", wantCode: 1},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			s := newSandbox(t)
+			s.releasedProject("1.0.0", withEnvExample(templateAt100), withEnvExample(templateAt123))
+			s.edit("demo/README.md", func(readme string) string {
+				return strings.Replace(readme, tt.editedLine+"\n", tt.editedLine+", mine\n", 1)
+			})
+			s.commit()
+			s.write(s.dir, "demo/.env", "PORT=4000\nSECRET=mine")
+
+			got := s.runIn("demo", "update")
+
+			if got.code != tt.wantCode {
+				t.Errorf("exit code = %d, want %d\n%s", got.code, tt.wantCode, got.stderr)
+			}
+			if got, want := s.read("demo/.env"), "PORT=4000\nSECRET=mine"; got != want {
+				t.Errorf(".env = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+func TestUpdateDoesNotCreateDotEnv(t *testing.T) {
+	s := newSandbox(t)
+	s.releasedProject("1.0.0", withEnvExample(templateAt100), withEnvExample(templateAt123))
+	if err := os.Remove(filepath.Join(s.dir, "demo", ".env")); err != nil {
+		t.Fatal(err)
+	}
+
+	got := s.runIn("demo", "update")
+
+	if got.code != 0 {
+		t.Errorf("exit code = %d, want 0\n%s", got.code, got.stderr)
+	}
+	if s.exists("demo/.env") {
+		t.Errorf("sow update created .env")
+	}
+}
+
+// withWorkspace returns files with a pnpm-workspace.yaml, which turns on the
+// follow-up step that runs vp install.
+func withWorkspace(files map[string]string) map[string]string {
+	files = maps.Clone(files)
+	files["base/pnpm-workspace.yaml"] = "packages: []\n"
+	return files
+}
+
+func TestUpdateRunsVPInstallWhenTheNewTemplateHasAWorkspace(t *testing.T) {
+	s := newSandbox(t)
+	s.releasedProject("1.0.0", templateAt100, withWorkspace(templateAt123))
+	s.fakeTool("vp", `echo "$*" >> vp-calls`)
+
+	got := s.runIn("demo", "update")
+
+	if got.code != 0 {
+		t.Errorf("exit code = %d, want 0\n%s", got.code, got.stderr)
+	}
+	if got, want := s.read("demo/vp-calls"), "install\n"; got != want {
+		t.Errorf("vp calls in the project root = %q, want %q", got, want)
+	}
+}
+
+func TestUpdateWithAConflictSkipsTheFollowUpSteps(t *testing.T) {
+	s := newSandbox(t)
+	s.releasedProject("1.0.0", templateAt100, withWorkspace(templateAt123))
+	s.edit("demo/README.md", func(readme string) string {
+		return strings.Replace(readme, "line four\n", "line four, mine\n", 1)
+	})
+	s.commit()
+	s.fakeTool("vp", `echo "$*" >> vp-calls`)
+
+	got := s.runIn("demo", "update")
+
+	if got.code != 1 {
+		t.Errorf("exit code = %d, want 1", got.code)
+	}
+	wantContains(t, got.stderr, "follow-up steps", "vp install")
+	if s.exists("demo/vp-calls") {
+		t.Errorf("vp ran despite the conflict: %q", s.read("demo/vp-calls"))
+	}
+}
+
+func TestUpdateReportsAFailedFollowUpStepAndKeepsTheMergedFiles(t *testing.T) {
+	s := newSandbox(t)
+	s.releasedProject("1.0.0", templateAt100, withWorkspace(templateAt123))
+	s.fakeTool("vp", "echo registry unreachable >&2; exit 1")
+
+	got := s.runIn("demo", "update")
+
+	if got.code != 1 {
+		t.Errorf("exit code = %d, want 1", got.code)
+	}
+	wantContains(t, got.stderr, "vp install", filepath.Join(s.dir, "demo"), "registry unreachable")
+	wantContains(t, s.read("demo/README.md"), "line four, from sow 1.2.3\n")
+	if !s.exists("demo/pnpm-workspace.yaml") {
+		t.Errorf("pnpm-workspace.yaml is gone after the failed follow-up step")
+	}
+}
+
+func TestUpdateLeavesTheChangesUncommitted(t *testing.T) {
+	s := newSandbox(t)
+	s.releasedProject("1.0.0", templateAt100, templateAt123)
+	head := s.git("rev-parse", "HEAD")
+
+	got := s.runIn("demo", "update")
+
+	if got.code != 0 {
+		t.Errorf("exit code = %d, want 0\n%s", got.code, got.stderr)
+	}
+	if got := s.git("rev-parse", "HEAD"); got != head {
+		t.Errorf("HEAD = %s, want %s", got, head)
+	}
+	want := "M .sow-answers.yml\n M README.md\n?? CHANGELOG.md"
+	if got := s.git("status", "--porcelain"); got != want {
+		t.Errorf("git status --porcelain = %q, want %q", got, want)
+	}
+}
+
+func TestUpdateWithAConflictCanBeUndoneWithGit(t *testing.T) {
+	s := newSandbox(t)
+	s.releasedProject("1.0.0", templateAt100, templateAt123)
+	s.edit("demo/README.md", func(readme string) string {
+		return strings.Replace(readme, "line four\n", "line four, mine\n", 1)
+	})
+	s.commit()
+	before := s.files("demo")
+	if got := s.runIn("demo", "update"); got.code != 1 {
+		t.Fatalf("sow update exited %d, want a conflict:\n%s", got.code, got.stderr)
+	}
+
+	s.git("reset", "--quiet", "--hard")
+	s.git("clean", "-fd")
+
+	if after := s.files("demo"); !maps.Equal(after, before) {
+		t.Errorf("project = %q\nwant the previous commit: %q", after, before)
+	}
+}
+
+func TestUpdateRendersATemplateThatReadsAComponentTheAnswersFileLacks(t *testing.T) {
+	s := newSandbox(t)
+	readsBackend := maps.Clone(templateAt100)
+	readsBackend["base/backend.md.tmpl"] = "backend: [[ .backend ]]\n"
+	newReadsBackend := maps.Clone(templateAt123)
+	newReadsBackend["base/backend.md.tmpl"] = "backend: [[ .backend ]]\n"
+	s.releasedProject("1.0.0", readsBackend, newReadsBackend)
+	s.edit("demo/.sow-answers.yml", func(file string) string {
+		return strings.Replace(file, "backend: none\n", "", 1)
+	})
+	s.commit()
+
+	got := s.runIn("demo", "update")
+
+	if got.code != 0 {
+		t.Errorf("exit code = %d, want 0\n%s", got.code, got.stderr)
+	}
+	if got, want := s.read("demo/backend.md"), "backend: none\n"; got != want {
+		t.Errorf("backend.md = %q, want %q", got, want)
+	}
+	wantContains(t, s.read("demo/README.md"), "line four, from sow 1.2.3\n")
 }
 
 func TestUpdateUsesTheCachedTemplateWhenTheRepoIsGone(t *testing.T) {

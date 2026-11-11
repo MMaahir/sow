@@ -69,7 +69,8 @@ func update(ctx context.Context, env Env, version string, recorded answers.Answe
 	}
 	if len(conflicts) > 0 {
 		return fmt.Errorf("the update from sow %s to %s left conflict markers in %s: "+
-			"resolve each conflict, then review the changes with git diff",
+			"resolve each conflict, run the follow-up steps sow update skipped, such as vp install, "+
+			"and review the changes with git diff. To undo the update, run git reset --hard && git clean -fd",
 			version, env.Version, strings.Join(conflicts, ", "))
 	}
 	if _, err := fmt.Fprintf(env.Stdout, "Updated %s from sow %s to %s. Review the changes with git diff.\n",

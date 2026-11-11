@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"strings"
 
 	"github.com/MMaahir/sow/internal/answers"
 	"github.com/MMaahir/sow/internal/render"
@@ -38,23 +39,34 @@ type UpdateOptions struct {
 
 // Update brings the project in opts.Dir from the template of release
 // opts.From to opts.Template, and records opts.To in the answers file. It
+// refuses a project that isn't a git repo or has uncommitted or untracked
+// files, so git reset --hard && git clean -fd can always undo the update. It
 // fetches the old template from opts.Repo unless opts.CacheDir already has it,
-// renders the old and the new template with the project's answers, and
-// merges each file with git merge-file.
+// renders the old and the new template with the project's answers, merges
+// each file with git merge-file, and runs the follow-up steps. It never
+// commits.
 //
 // Update returns the paths that git merge-file left conflict markers in,
-// sorted. A fetch or render failure leaves the project unchanged. A failure
-// while it changes files leaves the files it changed so far.
+// sorted. When there are any, it skips the follow-up steps, because a
+// manifest with conflict markers can't be installed. A failed check, fetch or
+// render leaves the project unchanged. A failure while it changes files, or a
+// failed follow-up step, leaves the files it changed so far.
 func Update(ctx context.Context, opts UpdateOptions) ([]string, error) {
+	if err := checkClean(ctx, opts.Environ, opts.Dir); err != nil {
+		return nil, err
+	}
 	oldTemplate, err := fetchTemplate(ctx, opts)
 	if err != nil {
 		return nil, err
 	}
-	oldRender, err := render.Render(os.DirFS(oldTemplate), opts.Answers.Dirs(), opts.Answers)
+	// The answers file keeps no entry for a component it lacks, but both
+	// renders need one.
+	renderAnswers := opts.Answers.WithComponentsOff()
+	oldRender, err := render.Render(os.DirFS(oldTemplate), renderAnswers.Dirs(), renderAnswers)
 	if err != nil {
 		return nil, fmt.Errorf("sow %s: %w", opts.From, err)
 	}
-	newRender, err := render.Render(opts.Template, opts.Answers.Dirs(), opts.Answers)
+	newRender, err := render.Render(opts.Template, renderAnswers.Dirs(), renderAnswers)
 	if err != nil {
 		return nil, err
 	}
@@ -75,7 +87,28 @@ func Update(ctx context.Context, opts UpdateOptions) ([]string, error) {
 	if err := os.WriteFile(filepath.Join(opts.Dir, answers.FileName), answersFile, 0o644); err != nil {
 		return nil, fmt.Errorf("write the answers file: %w", err)
 	}
-	return conflicts, nil
+	if len(conflicts) > 0 {
+		return conflicts, nil
+	}
+	return nil, runFollowUpSteps(ctx, opts.Environ, opts.Dir, true)
+}
+
+// checkClean returns an error if dir isn't in a git repo or has uncommitted
+// changes or untracked files. git clean -fd deletes untracked files and git
+// reset --hard discards uncommitted changes, so undoing an update would lose
+// them.
+func checkClean(ctx context.Context, environ []string, dir string) error {
+	status, err := output(ctx, environ, dir, "git", "status", "--porcelain")
+	if err != nil {
+		return fmt.Errorf("%s isn't a git repo, or git can't read it: sow update needs git to undo an update, "+
+			"so run git init and commit the project, then run sow update again: %w", dir, err)
+	}
+	if status != "" {
+		return fmt.Errorf("%s has uncommitted changes or untracked files: "+
+			"commit or stash them, then run sow update again, so git reset --hard && git clean -fd "+
+			"can undo the update without losing your work\n%s", dir, strings.TrimRight(status, "\n"))
+	}
+	return nil
 }
 
 // fetchTemplate returns the directory that holds the template of release

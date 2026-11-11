@@ -19,15 +19,21 @@ type followUpStep struct {
 	file string
 	// run does the step's work in the project directory.
 	run func(ctx context.Context, dir string, environ []string) error
+	// newOnly marks a step that sow new runs and sow update skips, such as one
+	// that writes a gitignored file. git reset --hard && git clean -fd can't
+	// undo a change to a gitignored file, so an update never makes one
+	// (ADR 0012).
+	newOnly bool
 }
 
 // followUpSteps returns the follow-up steps in the order they run.
 func followUpSteps() []followUpStep {
 	return []followUpStep{
 		{
-			name: "copy .env.example to .env",
-			file: ".env.example",
-			run:  copyEnvExample,
+			name:    "copy .env.example to .env",
+			file:    ".env.example",
+			run:     copyEnvExample,
+			newOnly: true,
 		},
 		{
 			name: "install the dependencies",
@@ -38,10 +44,14 @@ func followUpSteps() []followUpStep {
 }
 
 // runFollowUpSteps runs each follow-up step whose file exists in dir, in
-// order, and stops at the first error. A failure leaves the written files in
-// place, so the author can fix the cause and run the command again.
-func runFollowUpSteps(ctx context.Context, environ []string, dir string) error {
+// order, and stops at the first error. For an update, it skips the steps
+// marked newOnly. A failure leaves the written files in place, so the author
+// can fix the cause and run the command again.
+func runFollowUpSteps(ctx context.Context, environ []string, dir string, update bool) error {
 	for _, step := range followUpSteps() {
+		if update && step.newOnly {
+			continue
+		}
 		_, err := os.Stat(filepath.Join(dir, step.file))
 		if errors.Is(err, fs.ErrNotExist) {
 			continue

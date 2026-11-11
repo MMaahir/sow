@@ -54,7 +54,7 @@ Add one entry to `presets` in `internal/answers/presets.go`, and tests like `Tes
 ### Add a follow-up step
 
 1. Add one `followUpStep` to the list in `followUpSteps` in `internal/project/steps.go`. Set `name` to what the step does, `file` to a path relative to the project root, and `run` to the function that does the work.
-2. The step runs only if its file exists in the project, after the files are written and before the first commit. Its error is wrapped with `name`.
+2. The step runs only if its file exists in the project, after the files are written and before the first commit. Its error is wrapped with `name`. `sow update` runs it too, after the merge, unless the merge left conflicts. Set `newOnly` on a step that writes a gitignored file, such as `.env`, because `git reset --hard && git clean -fd` can't undo that change after an update.
 3. Test it in `internal/cli/` through the sandbox: the step's effect is on disk, and `git status` is clean after `sow new`. A file the step creates for the local machine only, such as `.env`, is gitignored and stays out of the first commit. A file the project needs, such as the lockfile `vp install` writes, is in the first commit.
 4. Test the failure too: the CLI exits 1, stderr names the command and the directory, and the rendered files are still there.
 
