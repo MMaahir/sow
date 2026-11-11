@@ -185,3 +185,24 @@ func TestNewBackendTSHasNoE2ETask(t *testing.T) {
 		t.Errorf(".env.example = %q, want %q", got, want)
 	}
 }
+
+func TestUpdateRejectsAnAnswersFileWithAFrontendAndNoBackend(t *testing.T) {
+	s := newSandbox(t)
+	file := "sow_version: 1.2.3\nproject_name: demo\nuser_name: Test User\n" +
+		"user_email: test@example.com\ngithub_user: test-user\nfrontend: react\n"
+	s.write(s.dir, "demo/.sow-answers.yml", file)
+
+	got := s.runIn("demo", "update")
+
+	if got.code != 1 {
+		t.Errorf("exit code = %d, want 1\n%s", got.code, got.stdout)
+	}
+	wantContains(t, got.stderr, "frontend needs a backend",
+		"set backend to ts in .sow-answers.yml", "run sow update again")
+	if strings.Contains(got.stderr, "--backend") {
+		t.Errorf("stderr gives sow new's advice:\n%s", got.stderr)
+	}
+	if got := s.read("demo/.sow-answers.yml"); got != file {
+		t.Errorf(".sow-answers.yml = %q, want it untouched", got)
+	}
+}
