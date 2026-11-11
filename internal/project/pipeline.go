@@ -74,6 +74,11 @@ func (p pipeline) run(ctx context.Context) ([]string, error) {
 	}
 
 	conflicts, err := p.applyChanges(ctx, project, changes)
+	if err != nil && !p.isNew() {
+		// Files written before the failure stay changed, so say how to undo them.
+		return nil, fmt.Errorf("%w\nsow update stopped partway. Run git reset --hard && git clean -fd "+
+			"in %s to undo its changes", err, p.dir)
+	}
 	if err != nil {
 		return nil, err
 	}

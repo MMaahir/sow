@@ -827,7 +827,7 @@ func TestUpdateReportsAFailedMergeAndLeavesTheFileUnchanged(t *testing.T) {
 	if got.code != 1 {
 		t.Errorf("exit code = %d, want 1", got.code)
 	}
-	wantContains(t, got.stderr, "merge logo.bin", "Cannot merge binary files")
+	wantContains(t, got.stderr, "merge logo.bin", "Cannot merge binary files", "git reset --hard && git clean -fd")
 	if got, want := s.read("demo/logo.bin"), "logo\x00mine\n"; got != want {
 		t.Errorf("logo.bin = %q, want it unchanged: %q", got, want)
 	}
