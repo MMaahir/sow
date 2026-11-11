@@ -248,16 +248,6 @@ func (s *sandbox) exists(name string) bool {
 	return err == nil
 }
 
-// projectAt creates the project demo and commits it with version recorded as
-// its sow_version, as if a sow at that version had created it.
-func (s *sandbox) projectAt(version string) {
-	s.t.Helper()
-	s.mustRun("new", "demo", "--no-input")
-	s.write(s.dir, "demo/.sow-answers.yml", strings.Replace(
-		s.read("demo/.sow-answers.yml"), "sow_version: "+testVersion+"\n", "sow_version: "+version+"\n", 1))
-	s.git("commit", "--all", "--message", "record sow "+version)
-}
-
 // install makes the sandbox run as sow version with files as its template.
 // Each key of files is a path inside the template, such as
 // "base/README.md.tmpl".
@@ -299,6 +289,30 @@ func (s *sandbox) release(version string, files map[string]string) {
 func (s *sandbox) releasedProject(version string, files, newFiles map[string]string) {
 	s.t.Helper()
 	s.release(version, files)
+	s.install(version, files)
+	s.mustRun("new", "demo", "--no-input")
+	s.install(testVersion, newFiles)
+}
+
+// cache writes files as the template of release version to the sandbox's
+// cache, ~/.cache/sow/templates/v<version>, where sow update looks before it
+// fetches. Each key of files is a path inside the template, such as
+// "base/README.md.tmpl". SOW_REPO still points nowhere, so an update that
+// misses the cache fails.
+func (s *sandbox) cache(version string, files map[string]string) {
+	s.t.Helper()
+	for name, content := range files {
+		s.write(s.home, ".cache/sow/templates/v"+version+"/"+name, content)
+	}
+}
+
+// cachedProject creates the project demo with sow version and files as its
+// template, and puts that template in the sandbox's cache, so sow update
+// never fetches it. Afterwards the sandbox runs as sow testVersion with
+// newFiles as its template.
+func (s *sandbox) cachedProject(version string, files, newFiles map[string]string) {
+	s.t.Helper()
+	s.cache(version, files)
 	s.install(version, files)
 	s.mustRun("new", "demo", "--no-input")
 	s.install(testVersion, newFiles)
