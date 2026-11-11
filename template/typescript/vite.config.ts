@@ -9,6 +9,6 @@ export default defineConfig({
     },
   },
   fmt: {
-    ignorePatterns: ["**/dist/**", "**/openapi.json", "pnpm-lock.yaml"],
+    ignorePatterns: ["**/dist/**", "**/openapi.json", "pnpm-lock.yaml", "mise.toml"],
   },
 });
