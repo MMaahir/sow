@@ -14,6 +14,7 @@ func TestNewGitHubCreatesAndProtectsTheRepoInOrder(t *testing.T) {
 
 	want := []string{
 		"before push: auth status --hostname github.com",
+		"before push: config get git_protocol --host github.com",
 		"before push: repo create test-user/demo --public",
 		"before push: api --method PATCH repos/test-user/demo" +
 			" -F allow_squash_merge=true -F allow_merge_commit=false -F allow_rebase_merge=false" +
@@ -86,6 +87,29 @@ func TestNewGitHubPushesMainAtTheFirstCommit(t *testing.T) {
 	}
 	if got := s.git("rev-parse", "--abbrev-ref", "main@{upstream}"); got != "origin/main" {
 		t.Errorf("main's upstream = %q, want origin/main", got)
+	}
+}
+
+func TestNewGitHubAddsOriginWithGHsGitProtocol(t *testing.T) {
+	tests := map[string]string{
+		"https": "https://github.com/test-user/demo.git",
+		"ssh":   "git@github.com:test-user/demo.git",
+	}
+	for protocol, want := range tests {
+		t.Run(protocol, func(t *testing.T) {
+			s := newSandbox(t)
+			s.ghProtocol = protocol
+			bare := s.fakeGH("")
+
+			s.mustRun("new", "demo", "--no-input", "--github")
+
+			if got := s.git("config", "remote.origin.url"); got != want {
+				t.Errorf("origin = %q, want %q", got, want)
+			}
+			if got, want := s.git("--git-dir", bare, "rev-parse", "main"), s.git("rev-parse", "HEAD"); got != want {
+				t.Errorf("main on the remote = %s, want the first commit %s", got, want)
+			}
+		})
 	}
 }
 

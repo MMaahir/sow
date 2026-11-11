@@ -43,6 +43,9 @@ type sandbox struct {
 	template fs.FS
 	// repo is the fixture git repo of sow that release creates, or "".
 	repo string
+	// ghProtocol is the git protocol the fake gh reports, "https" or "ssh".
+	// It's "https" when empty, gh's default.
+	ghProtocol string
 }
 
 // result is what one sow run produced.
@@ -384,17 +387,23 @@ func wantContains(t *testing.T, text string, parts ...string) {
 //
 // The fake appends each call's arguments to a file that ghCalls reads, and
 // prefixes each with "before push" or "after push", which it reads from the
-// bare repo. "auth status" passes, and every other call succeeds unless its
-// arguments contain failOn, when it prints an error and exits 1. An empty
-// failOn never fails.
+// bare repo. "auth status" passes, "config get git_protocol" prints
+// s.ghProtocol, and every other call succeeds unless its arguments contain
+// failOn, when it prints an error and exits 1. An empty failOn never fails.
 //
-// The sandbox's git config sends https://github.com/ to the sandbox, so sow
-// adds the real URL as the remote and the push still stays on the machine.
+// The sandbox's git config sends https://github.com/ and git@github.com: to
+// the sandbox, so sow adds the real URL as the remote and the push still
+// stays on the machine.
 func (s *sandbox) fakeGH(failOn string) string {
 	s.t.Helper()
+	protocol := s.ghProtocol
+	if protocol == "" {
+		protocol = "https"
+	}
 	remotes := filepath.Join(s.home, "github")
 	bare := filepath.Join(remotes, "test-user", "demo.git")
-	s.write(s.home, "gitconfig", "[url \""+remotes+"/\"]\n\tinsteadOf = https://github.com/\n")
+	s.write(s.home, "gitconfig", "[url \""+remotes+"/\"]\n"+
+		"\tinsteadOf = https://github.com/\n\tinsteadOf = git@github.com:\n")
 	cmd := exec.CommandContext(s.t.Context(), "git", "init", "--bare", "--quiet", "--initial-branch", "main", bare)
 	cmd.Env = s.environ()
 	if output, err := cmd.CombinedOutput(); err != nil {
@@ -405,6 +414,7 @@ git --git-dir "`+bare+`" rev-parse --verify --quiet refs/heads/main >/dev/null &
 echo "$when: $*" >> "`+s.ghCallsPath()+`"
 case "$*" in
 "auth status"*) exit 0 ;;
+"config get git_protocol"*) echo "`+protocol+`"; exit 0 ;;
 esac
 if [ -n "`+failOn+`" ]; then
   case "$*" in

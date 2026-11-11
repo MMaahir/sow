@@ -44,8 +44,12 @@ func New(ctx context.Context, opts Options) error {
 	if _, err := os.Lstat(opts.Dir); !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("%s already exists", filepath.Base(opts.Dir))
 	}
+	var remote string
 	if opts.GitHub {
-		if err := checkGitHub(ctx, opts.Environ, filepath.Dir(opts.Dir)); err != nil {
+		var err error
+		remote, err = checkGitHub(ctx, opts.Environ, filepath.Dir(opts.Dir),
+			opts.Answers["github_user"], opts.Answers[answers.ProjectName])
+		if err != nil {
 			return err
 		}
 	}
@@ -85,7 +89,7 @@ func New(ctx context.Context, opts Options) error {
 	if !opts.GitHub {
 		return nil
 	}
-	return publish(ctx, opts.Environ, opts.Dir, opts.Answers["github_user"], opts.Answers[answers.ProjectName])
+	return publish(ctx, opts.Environ, opts.Dir, opts.Answers["github_user"], opts.Answers[answers.ProjectName], remote)
 }
 
 // run starts a command in dir and waits for it. On failure the error names

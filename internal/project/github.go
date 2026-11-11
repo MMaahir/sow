@@ -18,14 +18,14 @@ type githubStep struct {
 }
 
 // githubSteps returns the steps that put the project in dir on GitHub as
-// owner/name, in the order they run.
+// owner/name, with origin at the URL remote, in the order they run.
 //
 // Push protection goes on before the push, so the first push is covered.
 // Branch protection goes on after the push, because GitHub's branch
 // protection API needs the branch to exist. The protection matches sow's own
 // main: ci-ok is the only required check and no approving review is needed,
 // because agents merge their own pull requests.
-func githubSteps(owner, name string) []githubStep {
+func githubSteps(owner, name, remote string) []githubStep {
 	repo := owner + "/" + name
 	return []githubStep{
 		{
@@ -36,7 +36,7 @@ func githubSteps(owner, name string) []githubStep {
 		{
 			name:    "add the GitHub repo as origin",
 			command: "git",
-			args:    []string{"remote", "add", "origin", "https://github.com/" + repo + ".git"},
+			args:    []string{"remote", "add", "origin", remote},
 		},
 		{
 			// The squash commit takes the pull request's title. GitHub's
@@ -88,23 +88,35 @@ func githubSteps(owner, name string) []githubStep {
 }
 
 // checkGitHub checks that gh is on PATH and logged in to github.com, so sow
-// refuses before it writes anything. The error says how to install gh or how
-// to log in.
-func checkGitHub(ctx context.Context, environ []string, dir string) error {
+// refuses before it writes anything, and returns the URL of the repo
+// owner/name in the git protocol gh is set up for. The error says how to
+// install gh or how to log in.
+//
+// gh login sets up git credentials for one protocol, so a push to a URL in
+// the other protocol could fail after the repo exists.
+func checkGitHub(ctx context.Context, environ []string, dir, owner, name string) (string, error) {
 	if _, err := lookPath(environ, "gh"); err != nil {
-		return fmt.Errorf("%w: --github needs the GitHub CLI. Install it from https://cli.github.com", err)
+		return "", fmt.Errorf("%w: --github needs the GitHub CLI. Install it from https://cli.github.com", err)
 	}
 	if err := run(ctx, environ, dir, "gh", "auth", "status", "--hostname", "github.com"); err != nil {
-		return fmt.Errorf("--github needs gh logged in to github.com: run gh auth login, then try again: %w", err)
+		return "", fmt.Errorf("--github needs gh logged in to github.com: run gh auth login, then try again: %w", err)
 	}
-	return nil
+	protocol, err := output(ctx, environ, dir, "gh", "config", "get", "git_protocol", "--host", "github.com")
+	if err != nil {
+		return "", fmt.Errorf("read the git protocol gh uses for github.com: %w", err)
+	}
+	if strings.TrimSpace(protocol) == "ssh" {
+		return "git@github.com:" + owner + "/" + name + ".git", nil
+	}
+	return "https://github.com/" + owner + "/" + name + ".git", nil
 }
 
-// publish runs the GitHub steps in dir in order and stops at the first error.
+// publish runs the GitHub steps in dir in order, with origin at the URL
+// remote, and stops at the first error.
 // The error names the failed step and its command, and lists the steps that
 // didn't finish. The project and its first commit stay on disk.
-func publish(ctx context.Context, environ []string, dir, owner, name string) error {
-	steps := githubSteps(owner, name)
+func publish(ctx context.Context, environ []string, dir, owner, name, remote string) error {
+	steps := githubSteps(owner, name, remote)
 	for i, step := range steps {
 		if err := run(ctx, environ, dir, step.command, step.args...); err != nil {
 			var left []string
