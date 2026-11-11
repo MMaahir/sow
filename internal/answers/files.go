@@ -56,6 +56,9 @@ func Read(path string) (string, Answers, error) {
 	}
 	version := recorded[versionKey]
 	delete(recorded, versionKey)
+	if err := CheckGiven(recorded); err != nil {
+		return "", nil, fmt.Errorf("check the answers file %s: %w", path, err)
+	}
 	return version, recorded, nil
 }
 
