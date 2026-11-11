@@ -347,6 +347,10 @@ func TestUpdateRefusesAProjectWithLocalChanges(t *testing.T) {
 		"an untracked file": func(s *sandbox) {
 			s.write(s.dir, "demo/notes.txt", "mine\n")
 		},
+		"an untracked file while git status hides untracked files": func(s *sandbox) {
+			s.git("config", "status.showUntrackedFiles", "no")
+			s.write(s.dir, "demo/notes.txt", "mine\n")
+		},
 	}
 	for name, change := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -403,15 +407,6 @@ func TestUpdateKeepsAFileTheProjectDeletedDeleted(t *testing.T) {
 	}
 }
 
-// withEnvExample returns files with a .env.example and a .gitignore that
-// ignores .env, as the real template has.
-func withEnvExample(files map[string]string) map[string]string {
-	files = maps.Clone(files)
-	files["base/.env.example"] = "PORT=3000\n"
-	files["base/.gitignore"] = ".env\n"
-	return files
-}
-
 func TestUpdateLeavesDotEnvUnchanged(t *testing.T) {
 	tests := map[string]struct {
 		editedLine string
@@ -457,14 +452,6 @@ func TestUpdateDoesNotCreateDotEnv(t *testing.T) {
 	if s.exists("demo/.env") {
 		t.Errorf("sow update created .env")
 	}
-}
-
-// withWorkspace returns files with a pnpm-workspace.yaml, which turns on the
-// follow-up step that runs vp install.
-func withWorkspace(files map[string]string) map[string]string {
-	files = maps.Clone(files)
-	files["base/pnpm-workspace.yaml"] = "packages: []\n"
-	return files
 }
 
 func TestUpdateRunsVPInstallWhenTheNewTemplateHasAWorkspace(t *testing.T) {

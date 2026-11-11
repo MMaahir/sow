@@ -103,7 +103,7 @@ func Update(ctx context.Context, opts UpdateOptions) ([]string, error) {
 // reset --hard discards uncommitted changes, so undoing an update would lose
 // them.
 func checkClean(ctx context.Context, environ []string, dir string) error {
-	status, err := output(ctx, environ, dir, "git", "status", "--porcelain")
+	status, err := output(ctx, environ, dir, "git", "status", "--porcelain", "--untracked-files=all")
 	if err != nil {
 		return fmt.Errorf("%s isn't a git repo, or git can't read it: sow update needs git to undo an update, "+
 			"so run git init and commit the project, then run sow update again: %w", dir, err)

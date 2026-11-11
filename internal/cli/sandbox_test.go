@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io/fs"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -442,4 +443,21 @@ func (s *sandbox) ghCalls() []string {
 		s.t.Fatal(err)
 	}
 	return strings.Split(strings.TrimSuffix(string(content), "\n"), "\n")
+}
+
+// withEnvExample returns files with a .env.example and a .gitignore that
+// ignores .env, as the real template has.
+func withEnvExample(files map[string]string) map[string]string {
+	files = maps.Clone(files)
+	files["base/.env.example"] = "PORT=3000\n"
+	files["base/.gitignore"] = ".env\n"
+	return files
+}
+
+// withWorkspace returns files with a pnpm-workspace.yaml, which turns on the
+// follow-up step that runs vp install.
+func withWorkspace(files map[string]string) map[string]string {
+	files = maps.Clone(files)
+	files["base/pnpm-workspace.yaml"] = "packages: []\n"
+	return files
 }
